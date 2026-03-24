@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.project.ScheduleMapper">
+
+    <resultMap id="taskMap" type="kr.or.ddit.vo.project.TaskVO">
+        <id property="taskNo" column="TASK_NO"/>
+        <result property="projNo" column="PROJ_NO"/>
+        <result property="taskTtl" column="TASK_TTL"/>
+        <result property="taskCn" column="TASK_CN"/>
+        <result property="taskStts" column="TASK_STTS"/>
+        <result property="taskPrgrt" column="TASK_PRGRT"/>
+        <result property="taskImpt" column="TASK_IMPT"/>
+        <result property="taskBgngDt" column="TASK_BGNG_DT"/>
+        <result property="taskEndDt" column="TASK_END_DT"/>
+        
+        <result property="empNm" column="TASK_NM"/>
+        <result property="taskNm" column="TASK_NM"/> <collection property="taskParticipantVOList"
+                    ofType="kr.or.ddit.vo.project.TaskParticipantVO"
+                    javaType="java.util.ArrayList">
+            <id property="prtpntNo" column="PRTPNT_NO"/>
+            <result property="empId" column="PART_EMP_ID"/>
+            <result property="empNm" column="PART_EMP_NM"/>
+            <result property="prtpntColor" column="PRTPNT_COLOR"/>
+        </collection>
+    </resultMap>
+
+    <select id="getScheduleList" resultMap="taskMap" parameterType="int">
+	    SELECT 
+	        T.TASK_NO, T.PROJ_NO, T.TASK_TTL, T.TASK_CN, T.TASK_STTS, 
+	        T.TASK_PRGRT, T.TASK_IMPT, T.TASK_BGNG_DT, T.TASK_END_DT,
+	        TP.PRTPNT_NO, TP.EMP_ID AS PART_EMP_ID, TP.PRTPNT_COLOR,
+	        E.EMP_NM AS PART_EMP_NM,
+	        E.EMP_NM AS TASK_NM
+	    FROM TASK T
+	    LEFT OUTER JOIN TASK_PARTICIPANT TP ON T.TASK_NO = TP.TASK_NO
+	    LEFT OUTER JOIN EMPLOYEE E ON TP.EMP_ID = E.EMP_ID
+	    WHERE T.PROJ_NO = #{projNo}
+	    ORDER BY T.TASK_NO DESC
+	</select>
+	
+	<select id="getProjectMembers" parameterType="int" resultType="kr.or.ddit.vo.EmployeeVO">
+	    SELECT 
+	        E.EMP_ID, 
+	        E.EMP_NM, 
+	        E.EMP_JBGD
+	    FROM PROJECT_PARTICIPANT PP
+	    INNER JOIN EMPLOYEE E ON PP.EMP_ID = E.EMP_ID
+	    WHERE PP.PROJ_NO = #{projNo}
+	    ORDER BY E.EMP_NM ASC
+	</select>
+
+</mapper>

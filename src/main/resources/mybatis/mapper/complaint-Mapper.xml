@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="kr.or.ddit.mapper.ComplaintMapper">
+
+    <insert id="insertComplaint" parameterType="kr.or.ddit.vo.ComplaintVO">
+        <selectKey keyProperty="dclNo" resultType="int" order="BEFORE">
+            SELECT COMPLAINT_SEQ.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO COMPLAINT (
+            DCL_NO, DCL_BBS_NO, EMP_ID, DCL_CN, DCL_DT, DCL_STTS
+        ) VALUES (
+            #{dclNo}, #{dclBbsNo}, #{empId}, #{dclCn}, SYSDATE, '신고접수'
+        )
+    </insert>
+
+    <select id="selectComplaintList" parameterType="map" resultType="kr.or.ddit.vo.ComplaintVO">
+	    SELECT 
+	        A.DCL_NO, 
+	        A.DCL_BBS_NO, 
+	        A.EMP_ID, 
+	        A.DCL_CN, 
+	        A.DCL_DT, 
+	        A.DCL_STTS,
+	        B.EMP_NM AS reporterNm, 
+	        C.BBS_NM AS bbsTitle,
+	        C.BBS_CN AS bbsCn,  C.EMP_ID AS writerId  
+	    FROM COMPLAINT A
+	    LEFT OUTER JOIN EMPLOYEE B ON(A.EMP_ID = B.EMP_ID)
+	    LEFT OUTER JOIN BBS_BOARD C ON(A.DCL_BBS_NO = C.BBS_NO)
+	    WHERE 1=1
+	    <if test="dclStts != null and dclStts != ''">
+	        AND A.DCL_STTS = #{dclStts}
+	    </if>
+	    ORDER BY A.DCL_NO DESC
+	</select>
+
+    <update id="updateComplaintStatus" parameterType="kr.or.ddit.vo.ComplaintVO">
+        UPDATE COMPLAINT
+        SET 
+            DCL_STTS = #{dclStts},
+            DCL_PRCS_ID = #{dclPrcsId},
+            DCL_PRCS_DT = SYSDATE,
+            DCL_PRCS_CN = #{dclPrcsCn}
+        WHERE DCL_NO = #{dclNo}
+    </update>
+
+    <select id="selectComplaintDetail" parameterType="int" resultType="kr.or.ddit.vo.ComplaintVO">
+        SELECT * FROM COMPLAINT WHERE DCL_NO = #{dclNo}
+    </select>
+	
+	<update id="incrementBoardReportCnt" parameterType="int">
+	    UPDATE BBS_BOARD 
+	    SET BBS_REPORT_CNT = NVL(BBS_REPORT_CNT, 0) + 1
+	    WHERE BBS_NO = #{bbsNo}
+	</update>
+	
+	<select id="getBoardReportCnt" parameterType="int" resultType="int">
+	    SELECT NVL(BBS_REPORT_CNT, 0)
+	    FROM BBS_BOARD
+	    WHERE BBS_NO = #{bbsNo}
+	</select>
+	
+	<update id="blindBoard" parameterType="int">
+	    UPDATE BBS_BOARD 
+	    SET BBS_DEL_YN = 'D' 
+	    WHERE BBS_NO = #{bbsNo}
+	</update>
+	
+	<update id="resetReportCount" parameterType="int">
+	    UPDATE BBS_BOARD
+	       SET BBS_REPORT_CNT = 0  
+	    WHERE BBS_NO = #{bbsNo}
+	</update>
+</mapper>

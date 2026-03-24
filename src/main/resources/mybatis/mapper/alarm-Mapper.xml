@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.AlarmMapper">
+
+    <!-- 실험용 -->
+    <select id="getAllEmp" resultType="EmployeeVO">
+    select * from EMPLOYEE
+    </select>
+
+    <!-- 알람 테이블 등록 -->
+    <insert id="insertAlarm" parameterType="AlarmVO">
+    <selectKey resultType="int" order="BEFORE" keyProperty="almId">
+    select seq_alarm_no.nextval from dual
+    </selectKey>
+        INSERT INTO ALARM (
+            ALM_ID
+            , ALM_MSG
+            , ALM_DTL
+            , ALM_URL
+            , ALM_SNDR_TM
+            , ALM_DEL_YN
+            , EMP_ID
+            , ALM_TYPE
+            , ALM_SNDR_ICON
+        )
+            VALUES (#{almId}, #{almMsg}, #{almDtl}, #{almUrl}, SYSDATE, 'N', #{empId}, #{almType}, #{almSndrIcon})
+    </insert>
+
+    <!-- 알람 수신자 테이블 등록 -->
+    <insert id="insertAlarmReceive" parameterType="AlarmReceiveVO">
+        <selectKey resultType="int" order="BEFORE" keyProperty="almRcvrNo">
+            select seq_alarm_no.nextval from dual
+        </selectKey>
+        INSERT INTO ALARM_RECEIVE
+        (ALM_RCVR_NO
+        , ALM_ID
+        , EMP_ID
+        , ALM_RCVR_TM
+        , ALM_YN
+        , ALM_DEL_YN)
+        VALUES (#{almRcvrNo}, #{almId}, #{empId}, SYSDATE, 'N',  'N')
+    </insert>
+
+    <!-- 안읽은 알람 개수 구하기 -->
+    <select id="countUnread" parameterType="int" resultType="int">
+        select count (*)
+        from(
+           SELECT a.*, ar.*
+           FROM ALARM a
+                    JOIN ALARM_RECEIVE ar
+                    ON ar.ALM_ID = a.ALM_ID
+           where ar.EMP_ID=#{empId}
+             and ar.ALM_DEL_YN='N'
+             and ar.ALM_YN='N'
+           )
+    </select>
+
+    <!-- 안읽은 알람 목록 구하기 -->
+    <select id="selectAlarmList" parameterType="int" resultType="AlarmVO">
+        SELECT a.*, ar.*
+        FROM ALARM a
+                 JOIN ALARM_RECEIVE ar
+                      ON ar.ALM_ID = a.ALM_ID
+        where ar.EMP_ID=#{empId}
+          and ar.ALM_DEL_YN='N'
+          and ar.ALM_YN='N'
+        order by a.ALM_SNDR_TM desc
+    </select>
+
+    <!-- 전체 알람 목록 구하기 -->
+    <select id="selectAllAlarmList" parameterType="int" resultType="AlarmVO">
+        SELECT a.*
+             , ar.*
+             , E.EMP_PROFILE
+             , FN_GET_AVATAR_NM(A.EMP_ID) AS AVT_SAVE_NM
+        FROM ALARM a
+                 JOIN ALARM_RECEIVE ar
+                      ON ar.ALM_ID = a.ALM_ID
+                 LEFT OUTER JOIN EMPLOYEE E
+                                 ON A.EMP_ID=E.EMP_ID
+
+        where ar.EMP_ID=#{empId}
+          and ar.ALM_DEL_YN='N'
+        order by a.ALM_SNDR_TM desc
+    </select>
+
+    <!-- 읽음 처리 -->
+    <update id="readAlarm" parameterType="int" >
+        UPDATE ALARM_RECEIVE
+        SET ALM_YN='Y' , ALM_YN_TM=sysdate
+        WHERE ALM_RCVR_NO=#{almRcvrNo}
+    </update>
+    <!-- 삭제 처리 -->
+    <update id="deleteAlarm" parameterType="int" >
+        UPDATE ALARM_RECEIVE
+        SET ALM_DEL_YN='Y'
+        WHERE ALM_RCVR_NO=#{almRcvrNo}
+    </update>
+    <!--전체 읽음 처리-->
+    <update id="readAllAlarm" parameterType="int" >
+        UPDATE ALARM_RECEIVE
+        SET ALM_YN='Y' , ALM_YN_TM=sysdate
+        WHERE EMP_ID=#{empId}  AND ALM_YN='N'
+    </update>
+
+    <!--전체 삭제 처리-->
+    <update id="deleteAllAlarm" parameterType="int" >
+        UPDATE ALARM_RECEIVE
+        SET ALM_DEL_YN='Y'
+        WHERE EMP_ID=#{empId} AND ALM_DEL_YN='N'
+    </update>
+    
+	<update id="readChatAlarm" parameterType="map">
+	    UPDATE ALARM_RECEIVE 
+	       SET ALM_YN = 'Y', 
+	           ALM_YN_TM = SYSDATE 
+	     WHERE ALM_YN = 'N'
+	       AND EMP_ID = #{empId}
+	       AND ALM_ID IN (
+	           SELECT ALM_ID 
+	             FROM ALARM 
+	            WHERE (UPPER(ALM_TYPE) = '채팅' OR UPPER(ALM_TYPE) = 'CHAT')
+	              AND REPLACE(ALM_URL, ' ', '') LIKE '%' || #{chatRmNo} || '%'
+	       )
+	</update>
+	
+	<update id="updateStts" parameterType="map">
+	    UPDATE ALARM_RECEIVE
+	    SET    ALM_YN = 'Y', 
+	           ALM_YN_TM = SYSDATE
+	    WHERE  ALM_RCVR_NO = #{almNo}  
+    </update>
+
+</mapper>
+
+
+
+
+
+
+
+
+
+
+
+

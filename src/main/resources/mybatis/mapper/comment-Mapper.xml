@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.CommentMapper">
+
+    <resultMap type="kr.or.ddit.vo.CommentVO" id="commentMap">
+        <id property="cmntNo" column="CMNT_NO"/>
+        <result property="cmntBbsNo" column="CMNT_BBS_NO"/>
+        <result property="empId" column="EMP_ID"/>
+        <result property="cmntCn" column="CMNT_CN"/> 
+        <result property="cmntDt" column="CMNT_DT"/> 
+        <result property="cmntUpNo" column="CMNT_UP_NO"/> 
+        <result property="cmntDelYn" column="CMNT_DEL_YN"/>
+        <result property="empNm" column="EMP_NM"/>
+        <result property="empProfile" column="EMP_PROFILE"/> </resultMap>
+
+    <insert id="insertComment" parameterType="kr.or.ddit.vo.CommentVO">
+        <selectKey keyProperty="cmntNo" resultType="int" order="BEFORE">
+            SELECT BBS_COMMENT_SEQ.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO BBS_COMMENT (
+            CMNT_NO, CMNT_BBS_NO, EMP_ID, CMNT_CN, CMNT_DT, CMNT_UP_NO, CMNT_DEL_YN
+        ) VALUES (
+		    #{cmntNo}, #{cmntBbsNo}, #{empId}, #{cmntCn}, SYSDATE, #{cmntUpNo, jdbcType=INTEGER}, 'N'
+		)
+    </insert>
+
+    <select id="selectCommentList" parameterType="int" resultMap="commentMap">
+	    SELECT 
+	        C.CMNT_NO, C.CMNT_BBS_NO, C.EMP_ID, C.CMNT_CN, 
+	        C.CMNT_DT, C.CMNT_UP_NO, C.CMNT_DEL_YN,
+	        E.EMP_NM,
+	        NVL(AV.AVT_SAVE_NM, E.EMP_PROFILE) AS EMP_PROFILE
+	    FROM BBS_COMMENT C
+	    INNER JOIN EMPLOYEE E ON C.EMP_ID = E.EMP_ID
+	    LEFT JOIN EMP_AVT EA ON E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y'
+	    LEFT JOIN AVATAR AV ON EA.AVT_NO = AV.AVT_NO
+	    WHERE C.CMNT_BBS_NO = #{cmntBbsNo}
+	      AND C.CMNT_DEL_YN = 'N'
+	    ORDER BY 
+	        CASE 
+	            WHEN C.CMNT_UP_NO IS NULL OR C.CMNT_UP_NO = 0 THEN C.CMNT_NO 
+	            ELSE C.CMNT_UP_NO 
+	        END DESC,
+	        C.CMNT_DT ASC
+	</select>
+    
+    <update id="updateComment" parameterType="kr.or.ddit.vo.CommentVO">
+        UPDATE BBS_COMMENT
+           SET CMNT_CN = #{cmntCn}
+         WHERE CMNT_NO = #{cmntNo}
+    </update>
+    
+    <update id="deleteComment" parameterType="kr.or.ddit.vo.CommentVO">
+        UPDATE BBS_COMMENT
+           SET CMNT_DEL_YN = 'Y'
+         WHERE CMNT_NO = #{cmntNo}
+    </update>
+
+</mapper>

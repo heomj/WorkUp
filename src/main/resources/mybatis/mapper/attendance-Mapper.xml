@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.AttendanceMapper">
+    <sql id="where">
+        <if test="keyword != null and keyword != ''">
+            AND (
+            A.ATT_REQ_TYPE LIKE '%' || #{keyword} || '%' OR
+            V.VCT_DOC_RSN LIKE '%' || #{keyword} || '%' OR
+            T.BZTRP_RSN LIKE '%' || #{keyword} || '%' OR
+            O.EXCS_WORK_DOC_RES LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+        <if test="mode != null and mode != ''">
+            <if test="mode == 'type'">
+                AND A.ATT_REQ_TYPE LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode == 'reason'">
+                AND (V.VCT_DOC_RSN LIKE '%' || #{keyword} || '%' OR
+                T.BZTRP_RSN LIKE '%' || #{keyword} || '%' OR
+                O.EXCS_WORK_DOC_RES LIKE '%' || #{keyword} || '%')
+            </if>
+        </if>
+    </sql>
+
+
+
+    <!--오늘 출근여부를 조회
+    public int checkTodayAttendance(int empId)-->
+    <select id="checkTodayAttendance" parameterType="int" resultType="int">
+        SELECT
+            COUNT(*)
+        FROM ATTENDANCE
+        WHERE
+            EMP_ID = #{empId}
+            AND TRUNC(ATT_WORK_DT) = TRUNC(SYSDATE)
+    </select>
+
+    <!--출근 도장 찍기
+    public int insertAttendance(AttendanceVO attendanceVO)-->
+    <insert id="insertAttendance" parameterType="kr.or.ddit.vo.AttendanceVO">
+        INSERT INTO ATTENDANCE (
+        ATT_ID, EMP_ID, ATT_STTS, ATT_CHECK_IN, ATT_WORK_DT, ATT_LATE_YN
+        ) VALUES (
+        SEQ_ATT_ID.NEXTVAL,
+        #{empId},
+        '출근',
+        (SELECT
+        CASE
+        WHEN S.ATT_WORK_STTS = '오전반차'
+        THEN TO_DATE(TO_CHAR(SYSDATE, 'YYYY-MM-DD') || ' 09:00:00', 'YYYY-MM-DD HH24:MI:SS')
+        /* 🎯 이제 + 9/24는 삭제! SYSDATE가 이미 한국 시간이면 그대로 사용 */
+        ELSE SYSDATE
+        END
+        FROM ATTENDANCE_WORK_STATUS S
+        WHERE S.EMP_ID = #{empId}),
+
+        /* 🎯 날짜도 보정 없이 오늘 날짜 그대로! */
+        TRUNC(SYSDATE),
+
+        (SELECT
+        CASE
+        WHEN S.ATT_WORK_STTS = '오전반차' THEN 'N'
+        /* 🎯 09:05 기준 지각 체크 */
+        WHEN TO_CHAR(SYSDATE, 'HH24MI') > '0905' THEN 'Y'
+        ELSE 'N'
+        END
+        FROM ATTENDANCE_WORK_STATUS S
+        WHERE S.EMP_ID = #{empId})
+        )
+    </insert>
+
+    <!--출근시 상태 업데이트-->
+    <update id="updateWorkStatusStart" parameterType="kr.or.ddit.vo.AttendanceWorkStatusVO">
+        MERGE INTO ATTENDANCE_WORK_STATUS T
+            USING DUAL
+            ON (T.EMP_ID = #{empId})
+            WHEN MATCHED THEN
+                UPDATE SET T.ATT_WORK_STTS = '출근'
+            WHEN NOT MATCHED THEN
+                INSERT (EMP_ID, ATT_WORK_STTS)
+                    VALUES (#{empId}, '출근')
+    </update>
+
+
+    <!--퇴근 도장 찍기
+    public int updateCheckout(String empId)-->
+    <update id="updateCheckout" parameterType="int">
+        UPDATE ATTENDANCE
+        SET
+        ATT_CHECK_OUT = CURRENT_TIMESTAMP,
+        ATT_STTS = '퇴근',
+        ATT_DAY_TIME = ROUND((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(ATT_CHECK_IN AS DATE)) * 24, 1),
+
+        ATT_DAY_MLG = CASE
+        WHEN (CAST(CURRENT_TIMESTAMP AS DATE) - CAST(ATT_CHECK_IN AS DATE)) * 24 >= 8
+        THEN 100 + (ROUND(((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(ATT_CHECK_IN AS DATE)) * 24) - 8, 1) * 10)
+
+        ELSE ROUND((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(ATT_CHECK_IN AS DATE)) * 24, 1) * 10
+        END
+        WHERE EMP_ID = #{empId}
+        AND TRUNC(ATT_WORK_DT) = TRUNC(SYSDATE)
+        AND ATT_CHECK_OUT IS NULL
+    </update>
+
+    <!--금일 마일리지 조회
+    public AttendanceVO selectTodayMlg(int empId)-->
+    <select id="selectTodayMlg" parameterType="int" resultType="kr.or.ddit.vo.AttendanceVO">
+        SELECT ATT_DAY_MLG
+        FROM ATTENDANCE
+        WHERE EMP_ID = #{empId}
+        AND TRUNC(ATT_WORK_DT) = TRUNC(SYSDATE)
+    </select>
+
+    <!--사원테이블에 마일리지(+)
+    public int updateEmpMlg(EmployeeVO empVO)-->
+    <update id="updateEmpMlg" parameterType="kr.or.ddit.vo.EmployeeVO">
+        UPDATE EMPLOYEE
+        SET
+        EMP_MLG = EMP_MLG + #{empMlg}
+        WHERE EMP_ID = #{empId}
+    </update>
+
+    <!--퇴근시 상태 업데이트-->
+    <update id="updateWorkStatusEnd" parameterType="kr.or.ddit.vo.AttendanceWorkStatusVO">
+        MERGE INTO ATTENDANCE_WORK_STATUS T
+            USING DUAL
+            ON (T.EMP_ID = #{empId})
+            WHEN MATCHED THEN
+                UPDATE SET T.ATT_WORK_STTS = '퇴근'
+            WHEN NOT MATCHED THEN
+                INSERT (EMP_ID, ATT_WORK_STTS)
+                    VALUES (#{empId}, '퇴근')
+    </update>
+
+    <!--휴가 신청 인서트-->
+    <insert id="insertVacation" parameterType="kr.or.ddit.vo.VacationDocumentVO">
+        <selectKey keyProperty="attTypeId" resultType="int" order="BEFORE">
+            SELECT SEQ_ATT_TYPE_ID.NEXTVAL FROM DUAL
+        </selectKey>
+
+        INSERT ALL
+        INTO ATTENDANCE_TYPE (ATT_TYPE_ID, EMP_ID, ATT_REQ_TYPE)
+        VALUES (#{attTypeId}, #{empId}, '휴가')
+
+        INTO APRV_VCT_DOC (
+            ATT_TYPE_ID,
+            EMP_ID,
+            VCT_DOC_CD,
+            VCT_DOC_BGNG,
+            VCT_DOC_END,
+            VCT_DOC_RSN,
+            VCT_APRV_YN,
+            VCT_STTS,
+            VCT_TOTAL_DAYS
+        ) VALUES (
+            #{attTypeId},
+            #{empId},
+            #{vctDocCd},
+            #{vctDocBgng},
+            #{vctDocEnd},
+            #{vctDocRsn},
+            'N',
+            '대기',
+            CASE
+                WHEN #{vctDocCd} IN ('오전반차', '오후반차') THEN 0.5
+                ELSE #{vctTotalDays}
+            END
+        )
+        SELECT * FROM DUAL
+    </insert>
+
+    <!--출장 신청 인서트-->
+    <insert id="insertTrip" parameterType="kr.or.ddit.vo.TripDocumentVO">
+        <selectKey keyProperty="attTypeId" resultType="int" order="BEFORE">
+            SELECT SEQ_ATT_TYPE_ID.NEXTVAL FROM DUAL
+        </selectKey>
+
+        INSERT ALL
+        INTO ATTENDANCE_TYPE (ATT_TYPE_ID, EMP_ID, ATT_REQ_TYPE)
+        VALUES (#{attTypeId}, #{empId}, '출장')
+
+        INTO APRV_BZTRP_DOC (
+            ATT_TYPE_ID,
+            EMP_ID,
+            BZTRP_PLC,
+            BZTRP_START,
+            BZTRP_END,
+            BZTRP_RSN,
+            BZTRP_APRV_YN,
+            BZTRP_STTS,
+            BZTRP_TOTAL_DAYS ) VALUES (
+        #{attTypeId},
+        #{empId},
+        #{bztrpPlc},
+        #{bztrpStart},
+        #{bztrpEnd},
+        #{bztrpRsn},
+        'N',
+        '대기',
+        #{bztrpTotalDays} )
+        SELECT * FROM DUAL
+    </insert>
+    <!--초과근무 신청 인서트-->
+    <insert id="insertOvertime" parameterType="kr.or.ddit.vo.OvertimeDocumentVO">
+        <selectKey keyProperty="attTypeId" resultType="int" order="BEFORE">
+            SELECT SEQ_ATT_TYPE_ID.NEXTVAL FROM DUAL
+        </selectKey>
+
+        INSERT ALL
+        INTO ATTENDANCE_TYPE (ATT_TYPE_ID, EMP_ID, ATT_REQ_TYPE)
+        VALUES (#{attTypeId}, #{empId}, '초과근무')
+
+        INTO APRV_EXCS_WORK_DOC (
+            ATT_TYPE_ID,
+            EMP_ID,
+            EXCS_WORK_DOC_BGNG,
+            EXCS_WORK_DOC_END,
+            EXCS_WORK_DOC_RES,
+            EXCS_WORK_APRV_YN,
+            EXCS_WORK_STTS
+        ) VALUES (
+        #{attTypeId},
+            #{empId},
+            #{excsWorkDocBgng},
+            #{excsWorkDocEnd},
+            #{excsWorkDocRes},
+            'N',
+            '대기'
+        )
+        SELECT * FROM DUAL
+    </insert>
+
+    <!--달력에 띄울 list
+    List<AttendanceVO> getAttendanceByMonth(int empId, String year, String month)-->
+    <select id="getAttendanceByMonth" parameterType="map" resultType="kr.or.ddit.vo.AttendanceVO">
+        SELECT
+        A.ATT_DAY AS attWorkDtStr,
+        B.ATT_ID,
+        B.EMP_ID,
+        /* ✅ 시차 방지를 위해 문자열로 직접 변환 */
+        TO_CHAR(B.ATT_CHECK_IN, 'YYYY-MM-DD HH24:MI:SS') AS strCheckIn,
+        TO_CHAR(B.ATT_CHECK_OUT, 'YYYY-MM-DD HH24:MI:SS') AS strCheckOut,
+        B.ATT_WORK_DT,
+        B.ATT_STTS,
+        B.ATT_LATE_YN,
+        B.ATT_DAY_MLG,
+        B.ATT_DAY_TIME
+        FROM (
+        SELECT #{year} || '-' || LPAD(#{month}, 2, '0') || '-' || LPAD(LEVEL, 2, '0') AS ATT_DAY
+        FROM DUAL
+        CONNECT BY LEVEL &lt;= TO_CHAR(LAST_DAY(TO_DATE(#{year} || '-' || LPAD(#{month}, 2, '0') || '-01', 'YYYY-MM-DD')), 'DD')
+        ) A
+        LEFT OUTER JOIN ATTENDANCE B
+        ON A.ATT_DAY = TO_CHAR(B.ATT_WORK_DT, 'YYYY-MM-DD')
+        AND B.EMP_ID = #{empId}
+        ORDER BY A.ATT_DAY
+    </select>
+
+    <!--달력에 띄울 신청목록-->
+    <select id="getApprovedCalendarEvents" parameterType="map" resultType="kr.or.ddit.vo.AttendanceTypeVO">
+        SELECT
+        TO_CHAR(EXCS_WORK_DOC_BGNG, 'YYYY-MM-DD') AS "eventDate",
+        'overtime' AS "eventType",
+        '초과근무' AS "eventLabel",
+        EXCS_WORK_STTS AS "formStatus"
+        FROM APRV_EXCS_WORK_DOC
+        WHERE EMP_ID = #{empId}
+        AND EXCS_WORK_STTS = '결재완료'
+        /* 🦾 형이 바꾼 부분: LPAD로 월 2자리 강제 */
+        AND TO_CHAR(EXCS_WORK_DOC_BGNG, 'YYYY-MM') = #{year} || '-' || LPAD(#{month}, 2, '0')
+
+        UNION ALL
+
+        SELECT
+        TO_CHAR(T.BGNG + (LEVEL - 1), 'YYYY-MM-DD') AS "eventDate",
+        'vacation' AS "eventType",
+        T.LABEL AS "eventLabel",
+        T.STTS AS "formStatus"
+        FROM (
+        SELECT
+        VCT_DOC_BGNG AS BGNG,
+        VCT_DOC_END AS END_DT,
+        (VCT_DOC_END - VCT_DOC_BGNG) + 1 AS DAYS,
+        ATT_TYPE_ID AS ID,
+        CASE
+        WHEN VCT_DOC_CD = '일반' THEN '정기휴가'
+        WHEN VCT_DOC_CD = '오전반차' THEN '오전반차'
+        WHEN VCT_DOC_CD = '오후반차' THEN '오후반차'
+        WHEN VCT_DOC_CD = '병가'     THEN '병가'
+        WHEN VCT_DOC_CD = '공가'     THEN '공가'
+        ELSE '' || VCT_DOC_CD
+        END AS LABEL,
+        VCT_STTS AS STTS
+        FROM APRV_VCT_DOC
+        WHERE EMP_ID = #{empId} AND VCT_STTS = '결재완료'
+        ) T
+        /* 🦾 형이 바꾼 부분: LPAD로 월 2자리 강제 */
+        WHERE TO_CHAR(T.BGNG + (LEVEL - 1), 'YYYY-MM') = #{year} || '-' || LPAD(#{month}, 2, '0')
+        CONNECT BY LEVEL &lt;= T.DAYS
+        AND PRIOR T.ID = T.ID
+        AND PRIOR SYS_GUID() IS NOT NULL
+
+        UNION ALL
+
+        SELECT
+        TO_CHAR(T.START_DT + (LEVEL - 1), 'YYYY-MM-DD') AS "eventDate",
+        'trip' AS "eventType",
+        '출장' AS "eventLabel",
+        T.STTS AS "formStatus"
+        FROM (
+        SELECT
+        BZTRP_START AS START_DT,
+        BZTRP_END AS END_DT,
+        (BZTRP_END - BZTRP_START) + 1 AS DAYS,
+        ATT_TYPE_ID AS ID,
+        BZTRP_STTS AS STTS
+        FROM APRV_BZTRP_DOC
+        WHERE EMP_ID = #{empId} AND BZTRP_STTS = '결재완료'
+        ) T
+        WHERE TO_CHAR(T.START_DT + (LEVEL - 1), 'YYYY-MM') = #{year} || '-' || LPAD(#{month}, 2, '0')
+        CONNECT BY LEVEL &lt;= T.DAYS
+        AND PRIOR T.ID = T.ID
+        AND PRIOR SYS_GUID() IS NOT NULL
+    </select>
+
+    <!--전체 행 수 가져오기(페이징처리)-->
+    <select id="getTotalApplication" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM ATTENDANCE_TYPE A
+        LEFT OUTER JOIN APRV_VCT_DOC V ON A.ATT_TYPE_ID = V.ATT_TYPE_ID
+        LEFT OUTER JOIN APRV_BZTRP_DOC T ON A.ATT_TYPE_ID = T.ATT_TYPE_ID
+        LEFT OUTER JOIN APRV_EXCS_WORK_DOC O ON A.ATT_TYPE_ID = O.ATT_TYPE_ID
+        WHERE A.EMP_ID = #{empId}
+        <include refid="where"/>
+    </select>
+
+    <!--통합 리스트 가져오기-->
+    <select id="getApplicationList" parameterType="hashMap" resultType="kr.or.ddit.vo.AttendanceTypeVO">
+        SELECT T.* FROM (
+            SELECT ROW_NUMBER() OVER(ORDER BY APP_DATE DESC) RNUM, T2.*
+            FROM (
+                SELECT
+                    A.ATT_TYPE_ID,
+                    A.EMP_ID,
+                    A.ATT_REQ_TYPE AS TYPE,
+                    V.VCT_DOC_CD AS vctDocCd,
+                CASE
+                    WHEN A.ATT_REQ_TYPE = '휴가' THEN V.VCT_DOC_BGNG
+                    WHEN A.ATT_REQ_TYPE = '출장' THEN T.BZTRP_START
+                    WHEN A.ATT_REQ_TYPE = '초과근무' THEN O.EXCS_WORK_DOC_BGNG
+                END AS APP_DATE,
+                CASE
+                    WHEN A.ATT_REQ_TYPE = '휴가' THEN V.VCT_DOC_END
+                    WHEN A.ATT_REQ_TYPE = '출장' THEN T.BZTRP_END
+                    WHEN A.ATT_REQ_TYPE = '초과근무' THEN O.EXCS_WORK_DOC_END
+                END AS APP_END_DATE,
+                CASE
+                    WHEN A.ATT_REQ_TYPE = '휴가' THEN NVL(V.VCT_TOTAL_DAYS, 0)
+                    WHEN A.ATT_REQ_TYPE = '출장' THEN NVL(T.BZTRP_TOTAL_DAYS, 0)
+                    WHEN A.ATT_REQ_TYPE = '초과근무' THEN 0
+                    ELSE 0
+                END AS TOTAL_DAYS,
+                CASE
+                    WHEN A.ATT_REQ_TYPE = '휴가' THEN V.VCT_DOC_RSN
+                    WHEN A.ATT_REQ_TYPE = '출장' THEN T.BZTRP_RSN
+                    WHEN A.ATT_REQ_TYPE = '초과근무' THEN O.EXCS_WORK_DOC_RES
+                END AS REASON,
+                CASE
+                    WHEN A.ATT_REQ_TYPE = '휴가' THEN V.VCT_STTS
+                    WHEN A.ATT_REQ_TYPE = '출장' THEN T.BZTRP_STTS
+                    WHEN A.ATT_REQ_TYPE = '초과근무' THEN O.EXCS_WORK_STTS
+                END AS STATUS
+                FROM ATTENDANCE_TYPE A
+                LEFT OUTER JOIN APRV_VCT_DOC V ON A.ATT_TYPE_ID = V.ATT_TYPE_ID
+                LEFT OUTER JOIN APRV_BZTRP_DOC T ON A.ATT_TYPE_ID = T.ATT_TYPE_ID
+                LEFT OUTER JOIN APRV_EXCS_WORK_DOC O ON A.ATT_TYPE_ID = O.ATT_TYPE_ID
+                WHERE A.EMP_ID = #{empId}
+            <include refid="where"/>
+            ) T2
+        ) T
+        WHERE T.RNUM BETWEEN (#{currentPage} * 10 - 9) AND (#{currentPage} * 10)
+    </select>
+
+    <!--ATT_TYPE_ID 아이디가 있는 테이블의 컬럼을 삭제-->
+    <delete id="deleteVacation">
+        DELETE FROM APRV_VCT_DOC WHERE ATT_TYPE_ID = #{attTypeId} AND VCT_STTS = '대기' AND EMP_ID = ${empId}
+    </delete>
+
+    <delete id="deleteBusinessTrip">
+        DELETE FROM APRV_BZTRP_DOC WHERE ATT_TYPE_ID = #{attTypeId} AND BZTRP_STTS = '대기' AND EMP_ID = ${empId}
+    </delete>
+
+    <delete id="deleteOvertime">
+        DELETE FROM APRV_EXCS_WORK_DOC WHERE ATT_TYPE_ID = #{attTypeId} AND EXCS_WORK_STTS = '대기' AND EMP_ID = ${empId}
+    </delete>
+    <!--부모테이블 해당 ATT_TYPE_ID삭제-->
+    <delete id="deleteCommonDoc">
+        DELETE FROM ATTENDANCE_TYPE
+        WHERE ATT_TYPE_ID = #{attTypeId}
+    </delete>
+
+    <!--ATT_TYPE_ID 아이디가 있는 테이블의 상태을 '신청중' 으로 변경-->
+    <update id="updateVacationStatus">
+        UPDATE APRV_VCT_DOC
+        SET VCT_STTS = '신청중'
+        WHERE ATT_TYPE_ID = #{attTypeId}
+        AND EMP_ID = #{empId}
+    </update>
+
+    <update id="updateBusinessTripStatus">
+        UPDATE APRV_BZTRP_DOC
+        SET BZTRP_STTS = '신청중'
+        WHERE ATT_TYPE_ID = #{attTypeId}
+        AND EMP_ID = #{empId}
+    </update>
+
+    <update id="updateOvertimeStatus">
+        UPDATE APRV_EXCS_WORK_DOC
+        SET EXCS_WORK_STTS = '신청중'
+        WHERE ATT_TYPE_ID = #{attTypeId}
+        AND EMP_ID = #{empId}
+    </update>
+
+    <!--연차 차감 및 사용량 업데이트-->
+    <update id="updateEmpLeave">
+        UPDATE ANNUAL_LEAVE
+        SET
+        ANN_LEAVE_USED = ANN_LEAVE_USED + (
+        SELECT VCT_TOTAL_DAYS
+        FROM APRV_VCT_DOC
+        WHERE ATT_TYPE_ID = #{attTypeId}
+        ),
+        ANN_LEAVE_REMAIN = ANN_LEAVE_REMAIN - (
+        SELECT VCT_TOTAL_DAYS
+        FROM APRV_VCT_DOC
+        WHERE ATT_TYPE_ID = #{attTypeId}
+        )
+        WHERE
+        EMP_ID = #{empId}
+        AND ANN_LEAVE_YEAR = TO_CHAR(SYSDATE, 'YYYY')
+        AND EXISTS (
+        SELECT 1
+        FROM APRV_VCT_DOC
+        WHERE ATT_TYPE_ID = #{attTypeId}
+        AND VCT_STTS = '신청중'
+        )
+    </update>
+    <!--부서찾기-->
+    <select id="getEmployeesByDept" parameterType="string" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT
+            A.EMP_ID,
+            A.EMP_NM,
+            A.EMP_JBGD,
+            A.EMP_EML,
+            A.EMP_PHONE,
+            A.EMP_REGIST_DT,
+            A.EMP_PROFILE,
+            B.DEPT_NM
+        FROM EMPLOYEE A
+        JOIN DEPARTMENT B ON A.DEPT_CD = B.DEPT_CD
+        WHERE B.DEPT_NM = #{deptNm}
+    </select>
+    <!--사원별 근태상황 조회1-->
+    <select id="getMonthlyAttendanceReport" parameterType="map" resultType="map">
+        <![CDATA[
+    SELECT
+        A.ATT_DAY,
+        B.*,
+        C.ATT_OUT_ID,
+        C.ATT_OUT_START_DT,
+        C.ATT_OUT_END_DT,
+        C.ATT_OUT_RSN,
+        C.ATT_OUT_TIME,
+        D.ATT_WORK_STTS
+    FROM
+    (
+        SELECT
+            TO_CHAR(TO_DATE(#{startDate}, 'YYYY-MM-DD') + LEVEL - 1, 'YYYY-MM-DD') AS ATT_DAY
+        FROM DUAL
+        CONNECT BY LEVEL <= (TO_DATE(#{endDate}, 'YYYY-MM-DD') - TO_DATE(#{startDate}, 'YYYY-MM-DD') + 1)
+    ) A
+    LEFT OUTER JOIN ATTENDANCE B
+    ON A.ATT_DAY = TO_CHAR(B.ATT_WORK_DT, 'YYYY-MM-DD')
+    AND B.EMP_ID = #{empId}
+    LEFT OUTER JOIN ATTENDANCE_OUT C
+    ON A.ATT_DAY = TO_CHAR(C.ATT_OUT_START_DT, 'YYYY-MM-DD')
+    AND C.EMP_ID = #{empId}
+    LEFT OUTER JOIN ATTENDANCE_WORK_STATUS D
+    ON D.EMP_ID = #{empId}
+    ORDER BY A.ATT_DAY
+    ]]>
+    </select>
+    <!--사원별 근태상황 조회2(통계-->
+    <select id="getMonthlyAttendanceReport2" parameterType="map" resultType="map">
+        <![CDATA[
+    SELECT
+        A.ATT_DAY,
+        B.*,
+        C.ATT_OUT_ID,
+        C.ATT_OUT_START_DT,
+        C.ATT_OUT_END_DT,
+        C.ATT_OUT_RSN,
+        C.ATT_OUT_TIME,
+        D.ATT_WORK_STTS
+    FROM
+    (
+        SELECT
+            TO_CHAR(TRUNC(SYSDATE, 'MM') + LEVEL - 1, 'YYYY-MM-DD') AS ATT_DAY
+        FROM DUAL
+        CONNECT BY
+            LEVEL <= TO_CHAR(LAST_DAY(SYSDATE), 'DD')
+    ) A
+    LEFT OUTER JOIN ATTENDANCE B
+    ON A.ATT_DAY = TO_CHAR(B.ATT_WORK_DT, 'YYYY-MM-DD')
+    AND B.EMP_ID = #{empId}
+    LEFT OUTER JOIN ATTENDANCE_OUT C
+    ON A.ATT_DAY = TO_CHAR(C.ATT_OUT_START_DT, 'YYYY-MM-DD')
+    AND C.EMP_ID = #{empId}
+    LEFT OUTER JOIN ATTENDANCE_WORK_STATUS D
+    ON D.EMP_ID = #{empId}
+    ORDER BY A.ATT_DAY
+    ]]>
+    </select>
+    <!--부서별 통계-->
+    <select id="getDeptAttendanceStats" resultType="kr.or.ddit.vo.DepartmentVO">
+        SELECT
+        d.DEPT_CD,
+        d.DEPT_NM,  COUNT(e.EMP_ID) AS TOTAL_COUNT,
+        COUNT(CASE WHEN TRIM(s.ATT_WORK_STTS) IN ('출근', '근무중', '퇴근', '초과근무') THEN 1 END) AS WORKING_COUNT,
+        COUNT(CASE WHEN TRIM(s.ATT_WORK_STTS) IN ('오전반차', '오후반차', '출장', '공가', '병가') THEN 1 END) AS SPECIAL_COUNT,
+        ROUND((COUNT(CASE WHEN TRIM(s.ATT_WORK_STTS) IN ('출근', '근무중', '퇴근', '초과근무', '오전반차', '오후반차', '출장') THEN 1 END) / NULLIF(COUNT(e.EMP_ID), 0)) * 100) AS WORK_RATE
+        FROM DEPARTMENT d
+        LEFT JOIN EMPLOYEE e ON d.DEPT_CD = e.DEPT_CD
+        LEFT JOIN ATTENDANCE_WORK_STATUS s ON e.EMP_ID = s.EMP_ID
+        GROUP BY d.DEPT_CD, d.DEPT_NM
+        ORDER BY d.DEPT_CD ASC
+    </select>
+
+    <!--근태수정-->
+    <update id="updateAttendance" parameterType="kr.or.ddit.vo.AttendanceVO">
+        MERGE INTO ATTENDANCE A
+        USING DUAL
+        ON (A.EMP_ID = #{empId} AND TO_CHAR(A.ATT_WORK_DT, 'YYYY-MM-DD') = TO_CHAR(#{attWorkDt}, 'YYYY-MM-DD'))
+
+        WHEN MATCHED THEN
+        UPDATE SET
+        A.ATT_STTS = #{attStts},
+        A.ATT_CHECK_IN = TO_DATE(SUBSTR(REPLACE(#{strCheckIn}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI'),
+        A.ATT_CHECK_OUT = CASE WHEN #{strCheckOut} IS NOT NULL
+        THEN TO_DATE(SUBSTR(REPLACE(#{strCheckOut}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI')
+        ELSE NULL END,
+        A.ATT_LATE_YN = #{attLateYn},
+        A.ATT_DAY_TIME = CASE WHEN #{strCheckIn} IS NOT NULL AND #{strCheckOut} IS NOT NULL
+        THEN ROUND((TO_DATE(SUBSTR(REPLACE(#{strCheckOut}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI')
+        - TO_DATE(SUBSTR(REPLACE(#{strCheckIn}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI')) * 24, 1)
+        ELSE 0 END WHEN NOT MATCHED THEN
+        INSERT (
+        ATT_ID, EMP_ID, ATT_WORK_DT, ATT_STTS,
+        ATT_CHECK_IN, ATT_CHECK_OUT, ATT_LATE_YN, ATT_DAY_TIME
+        )
+        VALUES (
+        SEQ_ATT_ID.NEXTVAL, #{empId}, #{attWorkDt}, #{attStts},
+        TO_DATE(SUBSTR(REPLACE(#{strCheckIn}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI'),
+        CASE WHEN #{strCheckOut} IS NOT NULL
+        THEN TO_DATE(SUBSTR(REPLACE(#{strCheckOut}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI')
+        ELSE NULL END,
+        #{attLateYn},
+        CASE WHEN #{strCheckIn} IS NOT NULL AND #{strCheckOut} IS NOT NULL
+        THEN ROUND((TO_DATE(SUBSTR(REPLACE(#{strCheckOut}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI')
+        - TO_DATE(SUBSTR(REPLACE(#{strCheckIn}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI')) * 24, 1)
+        ELSE 0 END
+        )
+    </update>
+
+    <!--근태수정근무상태 업데이트-->
+    <update id="updateWorkStatus" parameterType="kr.or.ddit.vo.AttendanceVO">
+        UPDATE ATTENDANCE_WORK_STATUS
+        SET ATT_WORK_STTS = #{attStts}
+        WHERE EMP_ID = #{empId}
+    </update>
+
+    <!--근태삭제-->
+    <delete id="deleteAttendance" parameterType="kr.or.ddit.vo.AttendanceVO">
+        DELETE FROM ATTENDANCE
+        WHERE ATT_ID = #{attId}
+    </delete>
+
+
+    <!--/// ////////근태 리메이크 추가 호출 시작/////////////-->
+    <select id="getTodayDetail" parameterType="int" resultType="kr.or.ddit.vo.AttendanceVO">
+        SELECT
+        ATT_ID,
+        EMP_ID,
+        TO_CHAR(ATT_CHECK_IN, 'HH24:MI') as "attCheckIn2",
+        TO_CHAR(ATT_CHECK_OUT, 'HH24:MI') as "attCheckOut2"
+        FROM ATTENDANCE
+        WHERE EMP_ID = #{empId}
+        AND TRUNC(ATT_WORK_DT) = TRUNC(SYSDATE)
+    </select>
+    <select id="getTodayOutDetail" parameterType="int" resultType="kr.or.ddit.vo.AttendanceOutVO">
+        SELECT
+        ATT_OUT_ID,
+        EMP_ID,
+        TO_CHAR(ATT_OUT_START_DT, 'HH24:MI') as "attOutStartDt2",
+        TO_CHAR(ATT_OUT_END_DT, 'HH24:MI') as "attOutEndDt2"
+        FROM ATTENDANCE_OUT
+        WHERE EMP_ID = #{empId}
+        AND TRUNC(ATT_OUT_START_DT) = TRUNC(SYSDATE)
+    </select>
+    <!--/// ////////근태 리메이크 추가 호출 끝/////////////-->
+    <!--///////////데쉬보드///////////////-->
+    <select id="teamStatus" parameterType="int" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT
+        D.DEPT_NM,
+        E.EMP_NM,
+        E.EMP_JBGD,
+        NVL(A.ATT_WORK_STTS, '결근') AS attWorkStts
+        FROM EMPLOYEE E
+        LEFT OUTER JOIN ATTENDANCE_WORK_STATUS A ON (E.EMP_ID = A.EMP_ID)
+        LEFT OUTER JOIN DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+        WHERE E.DEPT_CD = (
+        SELECT DEPT_CD
+        FROM EMPLOYEE
+        WHERE EMP_ID = #{empId}
+        )
+        ORDER BY E.EMP_JBGD_CD, E.EMP_NM ASC
+    </select>
+</mapper>

@@ -1,0 +1,505 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.SurveyMapper">
+
+	<!-- 참여 가능한 설문 -->
+	<select id="newList" parameterType="int" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT
+		A.SRVY_NO,
+		A.SRVY_EMP_ID,
+		A.SRVY_CN,
+		A.SRVY_TTL,
+		A.SRVY_BGNG_DT,
+		A.SRVY_END_DT,
+		A.SRVY_STTS,
+		A.SRVY_NOPE,
+		A.SRVY_ANON,
+		A.SRVY_MLG
+		FROM 	SURVEY A
+		WHERE 	A.SRVY_STTS = '진행중'
+		<![CDATA[
+		AND    SYSDATE >= A.SRVY_BGNG_DT
+		AND    SYSDATE < (A.SRVY_END_DT + 1)
+	]]>
+		AND 	NOT EXISTS (
+		SELECT 	1
+		FROM 	SURVEY_EMP B
+		WHERE 	B.SRVY_NO = A.SRVY_NO
+		AND 	B.EMP_ID = #{empId}
+		AND 	B.SRVY_YN = 'Y'
+		)
+		ORDER BY 	A.SRVY_BGNG_DT DESC
+	</select>
+
+	<!-- 참여한 설문 -->
+	<select id="mineList" parameterType="int" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT 	A.SRVY_NO,
+		A.SRVY_CN,
+		A.SRVY_EMP_ID,
+		A.SRVY_TTL,
+		A.SRVY_ANON,
+		B.SRVY_DT,
+		B.SRVY_MLG
+		FROM 	SURVEY A
+		INNER JOIN 	SURVEY_EMP B ON A.SRVY_NO = B.SRVY_NO
+		WHERE 	B.EMP_ID = #{empId}
+		AND 	B.SRVY_YN = 'Y'
+		ORDER BY 	B.SRVY_DT DESC
+	</select>
+
+	<!-- 종료된 설문 -->
+	<select id="closedList" parameterType="int" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT 	SRVY_NO, SRVY_CN, SRVY_BGNG_DT, SRVY_END_DT, SRVY_NOPE,
+		SRVY_ANON, SRVY_MLG, SRVY_TTL
+		FROM 	SURVEY
+		WHERE 	SRVY_STTS = '완료'
+		OR		SRVY_STTS = '30'
+		<![CDATA[
+    	 OR 	SYSDATE > (SRVY_END_DT + 1)
+    	]]>
+		ORDER BY SRVY_END_DT DESC
+	</select>
+
+
+
+	<!-- 설문 상세보기 -->
+	<select id="surveyDetail" parameterType="int" resultMap="surveyDetailMap">
+		SELECT 	A.SRVY_NO, A.SRVY_CN, A.SRVY_BGNG_DT, A.SRVY_END_DT,
+		A.SRVY_STTS, A.SRVY_ANON, A.SRVY_TTL, A.SRVY_MLG,
+		B.SRVY_QUEST_NO, B.SRVY_QUEST_CN, B.SRVY_QUEST_TYPE,
+		C.SRVY_QUEST_ITEM_NO, C.SRVY_QUEST_ITEM_CN
+		FROM 	SURVEY A
+		LEFT OUTER JOIN 	SURVEY_QUEST B ON A.SRVY_NO = B.SRVY_NO
+		LEFT OUTER JOIN 	SURVEY_QUEST_ITEM C ON B.SRVY_QUEST_NO = C.SRVY_QUEST_NO
+		WHERE 	A.SRVY_NO = #{srvyNo}
+		ORDER BY B.SRVY_QUEST_ORD, C.SRVY_QUEST_ITEM_NO
+	</select>
+
+
+
+
+	<!-- ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ -->
+
+	<!-- 설문 응답 제출 -->
+	<insert id="insertAnswer" parameterType="kr.or.ddit.vo.SurveyVO">
+		BEGIN
+		-- [응답 데이터]
+		MERGE INTO SURVEY_ANSWER A
+		USING DUAL
+		ON (
+		A.SRVY_NO = #{srvyNo}
+		AND A.SRVY_QUEST_NO = #{srvyQuestNo}
+		AND A.EMP_ID = #{empId}
+		)
+		-- 응답 데이터가 있는 경우
+		WHEN MATCHED THEN
+		UPDATE SET
+		A.SRVY_ANS_CN = #{srvyAnsCn},
+		A.SRVY_ANS_DT = SYSDATE
+		-- 처음 응답하는 경우
+		WHEN NOT MATCHED THEN
+		INSERT (
+		SRVY_ANS_NO,
+		SRVY_QUEST_NO,
+		SRVY_NO,
+		SRVY_ANS_DT,
+		EMP_ID,
+		SRVY_ANS_CN
+		)
+		VALUES (
+		SRVY_ANS_SEQ.NEXTVAL,
+		#{srvyQuestNo},
+		#{srvyNo},
+		SYSDATE,
+		#{empId},
+		#{srvyAnsCn}
+		);
+
+		-- [설문 대상자 상태]
+		MERGE INTO SURVEY_EMP E
+		USING DUAL ON (
+		E.SRVY_NO = #{srvyNo}
+		AND E.EMP_ID = #{empId}
+		)
+		-- 설문 중복 참여일 경우
+		WHEN MATCHED THEN
+		UPDATE SET
+		E.SRVY_YN = 'Y',
+		E.SRVY_DT = SYSDATE,
+		E.SRVY_MLG = #{srvyMlg, jdbcType=INTEGER}
+		-- 설문 처음 참여일 경우
+		WHEN NOT MATCHED THEN
+		INSERT (
+		EMP_ID,
+		SRVY_NO,
+		SRVY_YN,
+		SRVY_DT,
+		SRVY_MLG
+		)
+		VALUES (
+		#{empId},
+		#{srvyNo},
+		'Y',
+		SYSDATE,
+		#{srvyMlg, jdbcType=INTEGER}
+		);
+		END;
+	</insert>
+
+
+	<!-- 참여자 수 1 증가 -->
+	<update id="incrementSurveyNope" parameterType="int">
+		UPDATE SURVEY
+		SET    SRVY_NOPE = SRVY_NOPE + 1
+		WHERE  SRVY_NO = #{srvyNo}
+	</update>
+
+
+
+	<!-- 마일리지 -->
+	<update id="addMlg" parameterType="kr.or.ddit.vo.EmployeeVO">
+		UPDATE 	EMPLOYEE
+		SET		EMP_MLG = EMP_MLG + #{empMlg}
+		WHERE 	EMP_ID = #{empId}
+	</update>
+
+
+	<!-- 알림 전송할 사원ID 가져오기 -->
+	<select id="SurveyAllEmpIds" resultType="kr.or.ddit.vo.EmployeeVO">
+		SELECT	EMP_ID
+		FROM	EMPLOYEE
+		WHERE	EMP_STTS='Y'
+		AND   EMP_JBGD != '관리자'
+	</select>
+
+
+	<!-- ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ -->
+	<!-- [설문 통계] -->
+	<!-- 전체 설문 리스트 조회 -->
+	<select id="statsData" parameterType="int" resultMap="surveyStatsMap">
+		SELECT
+		S.SRVY_NO, S.SRVY_CN, S.SRVY_TTL, S.SRVY_NOPE, S.SRVY_ANON,
+		Q.SRVY_QUEST_NO, Q.SRVY_QUEST_CN, Q.SRVY_QUEST_TYPE,
+		I.SRVY_QUEST_ITEM_NO, I.SRVY_QUEST_ITEM_CN,
+		(	SELECT 	COUNT(*)
+		FROM 	SURVEY_ANSWER A
+		WHERE 	A.SRVY_QUEST_NO = Q.SRVY_QUEST_NO
+		AND 	A.SRVY_ANS_CN 	= TO_CHAR(I.SRVY_QUEST_ITEM_NO)
+		) AS ITEM_COUNT,
+		ANS.SRVY_ANS_CN
+		FROM 	SURVEY S
+		LEFT OUTER JOIN 	SURVEY_QUEST Q 		ON S.SRVY_NO = Q.SRVY_NO
+		LEFT OUTER JOIN 	SURVEY_QUEST_ITEM I ON Q.SRVY_QUEST_NO = I.SRVY_QUEST_NO
+		LEFT OUTER JOIN 	SURVEY_ANSWER ANS 	ON Q.SRVY_QUEST_NO = ANS.SRVY_QUEST_NO
+		WHERE 	S.SRVY_NO = #{srvyNo}
+		ORDER BY 	Q.SRVY_QUEST_ORD, I.SRVY_QUEST_ITEM_NO
+	</select>
+
+
+
+
+
+
+
+
+
+
+	<!-- ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ -->
+	<!-- [관리자페이지] -->
+
+	<!-- 설문 리스트 -->
+	<select id="allList" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT 	SRVY_NO,
+		SRVY_EMP_ID,
+		SRVY_CN,
+		SRVY_BGNG_DT,
+		SRVY_END_DT,
+		SRVY_STTS,
+		SRVY_NOPE,
+		SRVY_ANON,
+		SRVY_TTL,
+		SRVY_MLG
+		FROM    SURVEY
+		ORDER BY 	SRVY_NO DESC
+	</select>
+
+
+	<!-- 마감일 지나면 상태를 '진행중' -> '종료' 변경 -->
+	<update id="updateStts">
+		UPDATE 	SURVEY
+		SET 	SRVY_STTS = '종료'
+		WHERE
+		<![CDATA[
+				SRVY_END_DT < SYSDATE
+			]]>
+		AND 	SRVY_STTS = '진행중'
+	</update>
+
+
+
+
+
+	<!-- 설문 생성 -->
+
+	<!-- 설문 마스터 정보 저장 -->
+	<insert id="insertSurveyMaster" parameterType="kr.or.ddit.vo.SurveyVO">
+		<selectKey keyProperty="srvyNo" resultType="int" order="BEFORE">
+			SELECT 	SURVEY_SEQ.NEXTVAL
+			FROM 	DUAL
+		</selectKey>
+		INSERT INTO SURVEY (
+		SRVY_NO, SRVY_EMP_ID, SRVY_CN, SRVY_BGNG_DT, SRVY_END_DT,
+		SRVY_STTS, SRVY_NOPE, SRVY_ANON, SRVY_TTL, SRVY_MLG
+		) VALUES (
+		#{srvyNo}, #{srvyEmpId}, #{srvyCn}, SYSDATE, #{srvyEndDt},
+		'진행중', 0, #{srvyAnon}, #{srvyTtl}, #{srvyMlg}
+		)
+	</insert>
+
+	<!-- 설문 문항 저장 -->
+	<insert id="insertQuestion" parameterType="kr.or.ddit.vo.SurveyVO">
+		<selectKey keyProperty="srvyQuestNo" resultType="int" order="BEFORE">
+			SELECT 	SURVEY_QUEST_SEQ.NEXTVAL
+			FROM 	DUAL
+		</selectKey>
+		INSERT INTO SURVEY_QUEST (
+		SRVY_QUEST_NO, SRVY_NO, SRVY_QUEST_CN,
+		SRVY_QUEST_TYPE, SRVY_QUEST_ORD
+		) VALUES (
+		#{srvyQuestNo}, #{srvyNo}, #{srvyQuestCn},
+		#{srvyQuestType}, #{srvyQuestOrd}
+		)
+	</insert>
+
+	<!-- 설문 문항별 보기 저장 -->
+	<insert id="insertItem" parameterType="kr.or.ddit.vo.SurveyVO">
+		INSERT INTO SURVEY_QUEST_ITEM (
+		SRVY_QUEST_ITEM_NO, SRVY_QUEST_NO, SRVY_NO, SRVY_QUEST_ITEM_CN
+		) VALUES (
+		SURVEY_QUEST_ITEM_SEQ.NEXTVAL, #{srvyQuestNo}, #{srvyNo}, #{srvyQuestItemCn}
+		)
+	</insert>
+
+
+
+	<!-- 설문 상세보기 -->
+	<select id="detailSurvey" parameterType="int" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT
+		SRVY_NO, SRVY_EMP_ID, SRVY_CN, SRVY_BGNG_DT,
+		SRVY_END_DT, SRVY_STTS, SRVY_NOPE, SRVY_ANON,
+		SRVY_TTL, SRVY_MLG
+		FROM SURVEY
+		WHERE SRVY_NO = #{srvyNo}
+	</select>
+
+
+	<!-- 설문 수정 -->
+	<update id="updateSurvey" parameterType="kr.or.ddit.vo.SurveyVO">
+		UPDATE SURVEY
+		SET
+		SRVY_CN = #{srvyCn},
+		SRVY_END_DT = #{srvyEndDt},
+		SRVY_STTS = #{srvyStts},
+		SRVY_TTL = #{srvyTtl},
+		SRVY_MLG = #{srvyMlg}
+		WHERE SRVY_NO = #{srvyNo}
+	</update>
+
+	<!-- 설문 삭제 -->
+	<delete id="deleteSurveys" parameterType="java.util.List">
+		DELETE
+		FROM 	SURVEY
+		WHERE 	SRVY_NO IN
+		<foreach item="vo" collection="list" open="(" separator="," close=")">
+			#{vo.srvyNo}
+		</foreach>
+	</delete>
+
+	<!--
+	item="id"   		:  변수명
+	collection="list"   :  대상 데이터
+	open="("   			:  시작 문자
+	separator=","   	:  구분자
+	close=")"   		:  종료 문자
+	-->
+
+
+
+	<!-- 설문 상태 일괄 종료로 변경 -->
+	<update id="updateSttsSurvey" parameterType="java.util.List">
+		UPDATE 	SURVEY
+		SET		SRVY_STTS = '종료'
+		WHERE  	SRVY_NO IN
+		<foreach collection="list" item="item" open="(" separator="," close=")">
+			#{item.srvyNo}
+		</foreach>
+	</update>
+
+
+
+
+
+
+
+
+
+
+	<!-- ========================================================= -->
+	<!-- [통계] -->
+	<select id="surveyStats" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT
+		COUNT(*) AS total,
+		COUNT(CASE WHEN SRVY_STTS = '진행중' THEN 1 END) AS ongoing,
+		COUNT(CASE WHEN TO_CHAR(SRVY_BGNG_DT, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM')
+		THEN 1 END) AS monthlyNew
+		FROM SURVEY
+	</select>
+
+	<!-- 평균 참여율 -->
+	<select id="avgSurvey" resultType="kr.or.ddit.vo.SurveyVO">
+		SELECT 	ROUND( NVL(SUM(S.SRVY_NOPE) / NULLIF(COUNT(S.SRVY_NO) * MAX(E_TOTAL.CNT), 0) * 100
+		, 0), 1) AS aveData
+		FROM SURVEY S
+		INNER JOIN EMPLOYEE E ON S.SRVY_EMP_ID = E.EMP_ID
+		CROSS JOIN (
+		SELECT COUNT(*) AS CNT
+		FROM EMPLOYEE
+		WHERE EMP_STTS != 'N' AND EMP_JBGD != '관리자'
+		) E_TOTAL
+		WHERE E.EMP_STTS != 'N'
+	</select>
+
+
+	<!-- [차트] -->
+	<!-- 부서별 참여율 -->
+	<select id="deptStats" resultType="map" parameterType="int">
+		SELECT  D.DEPT_NM AS name,
+		ROUND(
+		(COUNT(CASE WHEN SE.SRVY_YN = 'Y' THEN 1 END) * 100.0) /
+		NULLIF(COUNT(E.EMP_ID), 0), 1
+		) AS value
+		FROM   DEPARTMENT D
+		JOIN   EMPLOYEE E   	  ON D.DEPT_CD = E.DEPT_CD
+		LEFT JOIN 	SURVEY_EMP SE ON E.EMP_ID = SE.EMP_ID
+		<if test="srvyNo > 0">
+			AND 	SE.SRVY_NO = #{srvyNo}
+		</if>
+		WHERE  		E.EMP_STTS != 'N'
+		AND   		E.EMP_JBGD != '관리자'
+		GROUP BY 	D.DEPT_NM, D.DEPT_CD
+		ORDER BY 	D.DEPT_NM ASC
+	</select>
+
+	<!-- 직급별 참여율 -->
+	<select id="rankStats" resultType="map" parameterType="int">
+		SELECT  E.EMP_JBGD AS name,
+		ROUND(
+		(COUNT(CASE WHEN SE.SRVY_YN = 'Y' THEN 1 END) * 100.0) /
+		NULLIF(COUNT(E.EMP_ID), 0), 1
+		) AS value
+		FROM   EMPLOYEE E
+		LEFT JOIN 	SURVEY_EMP SE ON E.EMP_ID = SE.EMP_ID
+		<if test="srvyNo > 0">
+			AND  SE.SRVY_NO = #{srvyNo}
+		</if>
+		WHERE  		E.EMP_STTS != 'N'
+		AND   		E.EMP_JBGD != '관리자'
+		GROUP BY 	E.EMP_JBGD
+		ORDER BY 	CASE 	E.EMP_JBGD 		WHEN '팀장' THEN 1
+											WHEN '대리' THEN 2
+											WHEN '주임' THEN 3
+											WHEN '사원' THEN 4
+											ELSE 5
+					END ASC
+	</select>
+
+
+	<!-- 재직 중인 전체 사원 수 -->
+	<select id="totalEmpCount" resultType="int">
+		SELECT	COUNT(EMP_ID)
+		FROM	EMPLOYEE
+		WHERE	EMP_STTS='Y'
+		AND   	EMP_JBGD != '관리자'
+	</select>
+
+
+
+	<!-- 개별 응답 상세 -->
+	<select id="individualAnswer" parameterType="map">
+		SELECT
+		A.SRVY_ANS_NO,
+		A.SRVY_ANS_DT,
+		A.EMP_ID,
+		E.EMP_NM,
+		D.DEPT_NM,
+		Q.SRVY_QUEST_NO,
+		Q.SRVY_QUEST_ORD,
+		Q.SRVY_QUEST_CN,
+		Q.SRVY_QUEST_TYPE,
+		CASE
+		WHEN 	Q.SRVY_QUEST_TYPE = 1
+		THEN 	I.SRVY_QUEST_ITEM_CN
+		ELSE 	A.SRVY_ANS_CN
+		END AS ANS_CONTENT,
+		TO_CHAR(A.SRVY_ANS_DT, 'YYYY-MM-DD HH24:MI') AS ANS_DATE
+		FROM 	SURVEY_ANSWER A
+		JOIN 			SURVEY S 			 ON A.SRVY_NO = S.SRVY_NO
+		JOIN 			SURVEY_QUEST Q 		 ON A.SRVY_QUEST_NO = Q.SRVY_QUEST_NO
+		LEFT JOIN 	EMPLOYEE E 			 ON A.EMP_ID = E.EMP_ID
+		LEFT JOIN 	DEPARTMENT D 		 ON E.DEPT_CD = D.DEPT_CD
+		LEFT JOIN 	SURVEY_QUEST_ITEM I  ON A.SRVY_ANS_CN = TO_CHAR(I.SRVY_QUEST_ITEM_NO)
+		AND Q.SRVY_QUEST_NO = I.SRVY_QUEST_NO
+		WHERE 	A.SRVY_NO = #{srvyNo}
+		ORDER BY 	A.SRVY_ANS_DT DESC, Q.SRVY_QUEST_ORD ASC
+	</select>
+
+
+
+
+	<resultMap id="surveyDetailMap" type="kr.or.ddit.vo.SurveyVO">
+		<id property="srvyNo" column="SRVY_NO"/>
+		<result property="srvyCn" column="SRVY_CN"/>
+		<result property="srvyAnon" column="SRVY_ANON"/>
+		<result property="srvyTtl" column="SRVY_TTL"/>
+		<result property="srvyMlg" column="SRVY_MLG"/>
+		<!-- 질문 리스트 -->
+		<collection property="questions" ofType="kr.or.ddit.vo.SurveyVO">
+			<id property="srvyQuestNo" column="SRVY_QUEST_NO"/>
+			<result property="srvyQuestCn" column="SRVY_QUEST_CN"/>
+			<result property="srvyQuestType" column="SRVY_QUEST_TYPE"/>
+			<!-- 보기 리스트 -->
+			<collection property="items" ofType="kr.or.ddit.vo.SurveyVO">
+				<id property="srvyQuestItemNo" column="SRVY_QUEST_ITEM_NO"/>
+				<result property="srvyQuestItemCn" column="SRVY_QUEST_ITEM_CN"/>
+			</collection>
+		</collection>
+	</resultMap>
+
+
+	<resultMap id="surveyStatsMap" type="kr.or.ddit.vo.SurveyVO">
+		<!-- 설문 -->
+		<id property="srvyNo" column="SRVY_NO"/>
+		<result property="srvyCn" column="SRVY_CN"/>
+		<result property="srvyTtl" column="SRVY_TTL"/>
+		<result property="srvyNope" column="SRVY_NOPE"/>
+		<result property="srvyAnon" column="SRVY_ANON"/>
+		<!-- 문항(SURVEY_QUEST) 리스트 -->
+		<collection property="questions" ofType="kr.or.ddit.vo.SurveyVO">
+			<id property="srvyQuestNo" column="SRVY_QUEST_NO"/>
+			<result property="srvyQuestCn" column="SRVY_QUEST_CN"/>
+			<result property="srvyQuestType" column="SRVY_QUEST_TYPE"/>
+			<!-- 문항보기(SURVEY_QUEST_ITEM) 리스트 -->
+			<collection property="items" ofType="kr.or.ddit.vo.SurveyVO">
+				<id property="srvyQuestItemNo" column="SRVY_QUEST_ITEM_NO"/>
+				<result property="srvyQuestItemCn" column="SRVY_QUEST_ITEM_CN"/>
+				<result property="itemCount" column="ITEM_COUNT"/> <!-- 통계 카운트 -->
+			</collection>
+			<!-- 주관식 답변 리스트 -->
+			<collection property="answers" ofType="java.lang.String">
+				<result column="SRVY_ANS_CN"/>
+			</collection>
+		</collection>
+	</resultMap>
+
+
+</mapper>

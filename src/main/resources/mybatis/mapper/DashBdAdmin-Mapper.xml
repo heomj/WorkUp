@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.DashBdAdminMapper">
+
+    <!-- 예산 -->
+    <select id="budget" resultType="long">
+        SELECT
+            NVL(SUM(BD.BGT_AMT) - SUM(BD.BGT_EXCN), 0) AS remainBudget
+        FROM BUDGET_MASTER M
+            JOIN BUDGET_DETAIL BD ON M.BGT_M_CD = BD.BGT_M_CD
+        WHERE M.BGT_YR = TO_CHAR(SYSDATE, 'YYYY')
+    </select>
+
+    <!-- 전체 사원 수 -->
+    <select id="emp" resultType="int">
+        SELECT COUNT(*)
+            FROM EMPLOYEE
+        WHERE EMP_STTS = 'Y'
+         AND EMP_ROLE != '관리자'
+    </select>
+
+    <!-- 진행하고 있는 프로젝트 수 -->
+    <select id="proj" resultType="int">
+        SELECT COUNT(*)
+            FROM PROJECT
+        WHERE PROJ_STTS = '진행'
+    </select>
+
+    <select id="complaint" resultType="int">
+        SELECT COUNT(*)
+            FROM COMPLAINT
+        WHERE DCL_DT >= TRUNC(SYSDATE, 'MM')
+    </select>
+
+
+</mapper>
+
+
+
+
+
+
+
+
+
+
+
+

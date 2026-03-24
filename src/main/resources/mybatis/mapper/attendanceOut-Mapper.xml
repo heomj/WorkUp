@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.AttendanceOutMapper">
+    <!--외출신청-->
+    <insert id="startOuting" parameterType="kr.or.ddit.vo.AttendanceOutVO">
+        INSERT INTO ATTENDANCE_OUT (
+            ATT_OUT_ID,
+            EMP_ID,
+            ATT_OUT_START_DT,
+            ATT_OUT_RSN
+        ) VALUES (
+                     SEQ_ATT_OUT_ID.NEXTVAL,
+                     #{empId},
+                     CURRENT_TIMESTAMP,
+                     #{attOutRsn}
+                 )
+    </insert>
+
+    <!--외출신청시 상태 업데이트-->
+    <update id="updateWorkStatusOut" parameterType="kr.or.ddit.vo.AttendanceWorkStatusVO">
+        MERGE INTO ATTENDANCE_WORK_STATUS T
+        USING DUAL
+        ON (T.EMP_ID = #{empId})
+        WHEN MATCHED THEN
+            UPDATE SET T.ATT_WORK_STTS = '외출'
+        WHEN NOT MATCHED THEN
+            INSERT (EMP_ID, ATT_WORK_STTS)
+                VALUES (#{empId}, '외출')
+    </update>
+
+    <!--복귀 신청-->
+    <update id="endOuting" parameterType="kr.or.ddit.vo.AttendanceOutVO">
+        UPDATE ATTENDANCE_OUT
+        SET
+        ATT_OUT_END_DT = CURRENT_TIMESTAMP,
+        ATT_OUT_TIME = ROUND((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(ATT_OUT_START_DT AS DATE)) * 24 * 60, 0)
+        WHERE EMP_ID = #{empId}
+        AND ATT_OUT_END_DT IS NULL
+        AND ATT_OUT_ID = (
+        SELECT MAX(ATT_OUT_ID)
+        FROM ATTENDANCE_OUT
+        WHERE EMP_ID = #{empId}
+        AND ATT_OUT_END_DT IS NULL
+        )
+    </update>
+
+    <!--외출신청시 상태 업데이트-->
+    <update id="updateWorkStatusBack" parameterType="kr.or.ddit.vo.AttendanceWorkStatusVO">
+        MERGE INTO ATTENDANCE_WORK_STATUS T
+        USING DUAL
+        ON (T.EMP_ID = #{empId})
+        WHEN MATCHED THEN
+        UPDATE SET T.ATT_WORK_STTS = '복귀'
+        WHEN NOT MATCHED THEN
+        INSERT (EMP_ID, ATT_WORK_STTS)
+        VALUES (#{empId}, '복귀')
+    </update>
+
+    <!--외출수정 관리자-->
+    <update id="updateAttendance" parameterType="kr.or.ddit.vo.AttendanceOutVO">
+        UPDATE ATTENDANCE_OUT
+        SET
+            ATT_OUT_START_DT = TO_DATE(SUBSTR(REPLACE(#{strOutStart}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI'),
+            ATT_OUT_END_DT = TO_DATE(SUBSTR(REPLACE(#{strOutEnd}, 'T', ' '), 1, 16), 'YYYY-MM-DD HH24:MI'),
+            ATT_OUT_RSN = #{attOutRsn},
+            ATT_OUT_TIME = #{attOutTime}
+        WHERE EMP_ID = #{empId}
+        AND ATT_OUT_ID = #{attOutId}
+    </update>
+
+    <!--외출삭제 관리자-->
+    <delete id="deleteAttendance" parameterType="kr.or.ddit.vo.AttendanceOutVO">
+        DELETE FROM ATTENDANCE_OUT
+        WHERE ATT_OUT_ID = #{attOutId}
+    </delete>
+</mapper>

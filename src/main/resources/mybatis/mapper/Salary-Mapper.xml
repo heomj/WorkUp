@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.SalaryMapper">
+    <sql id="payslipWhere">
+        <if test="keyword != null and keyword != ''">
+            AND (
+            SAL_MONTH LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+    </sql>
+    <!--전체 행수구하기-->
+    <select id="getTotalPayslip" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM SALARY_MASTER
+        WHERE EMP_ID = #{empId}
+        <include refid="payslipWhere"/>
+    </select>
+    <!--해당 페이지리스트 가져오기-->
+    <select id="getPayslipList" parameterType="hashMap" resultType="kr.or.ddit.vo.SalaryMasterVO">
+        SELECT T.* FROM (
+        SELECT ROW_NUMBER() OVER(ORDER BY SAL_MONTH DESC) RNUM, S.*
+        FROM (
+        SELECT
+        SAL_ID,
+        EMP_ID,
+        SAL_MONTH,
+        SAL_BASE_PAY,
+        SAL_OT_PAY,
+        SAL_TRIP_PAY,
+        SAL_DEDUCTION_TOTAL,
+        SAL_NET_PAY,
+        SAL_STTS,
+        SAL_CREATED_DT
+        FROM SALARY_MASTER
+        WHERE EMP_ID = #{empId}
+        <include refid="payslipWhere"/>
+        ) S
+        ) T
+        WHERE T.RNUM BETWEEN (#{currentPage} * 10 - 9) AND (#{currentPage} * 10)
+    </select>
+    <!--급여상세-->
+    <select id="getPayslipDetail" parameterType="hashMap" resultType="kr.or.ddit.vo.SalaryMasterVO">
+        SELECT
+        S.SAL_ID, S.EMP_ID, S.SAL_MONTH, S.SAL_BASE_PAY,
+        S.SAL_OT_PAY, S.SAL_TRIP_PAY, S.SAL_DEDUCTION_TOTAL, S.SAL_NET_PAY,
+        E.EMP_NM,
+        E.EMP_JBGD AS "empJbgd",
+        D.DEPT_NM
+        FROM
+        SALARY_MASTER S
+        JOIN EMPLOYEE E ON S.EMP_ID = E.EMP_ID
+        JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        WHERE
+        S.SAL_ID = #{salId}
+        AND S.EMP_ID = #{empId}
+    </select>
+
+    <!--관리자 List-->
+    <select id="selectSalaryList" resultType="map">
+        SELECT
+        E.EMP_ID            AS "empId",
+        E.EMP_NM            AS "empNm",
+        E.EMP_JBGD          AS "empJbgd",
+        D.DEPT_NM           AS "deptNm",
+        #{searchMonth}      AS "salMonth",
+
+        NVL(S.SAL_BASE_PAY, NVL(SB.BASE_MIN, 0)) AS "salBasePay",
+
+        NVL(S.SAL_OT_PAY, NVL(OT.TOTAL_OT_HOURS, 0) * 15000) AS "salOtPay",
+
+        NVL(S.SAL_TRIP_PAY, NVL(BT.TOTAL_TRIP_DAYS, 0) * 50000) AS "salTripPay",
+
+        NVL(S.SAL_DEDUCTION_TOTAL,
+        (NVL(S.SAL_BASE_PAY, NVL(SB.BASE_MIN, 0)) +
+        NVL(S.SAL_OT_PAY, NVL(OT.TOTAL_OT_HOURS, 0) * 15000) +
+        NVL(S.SAL_TRIP_PAY, NVL(BT.TOTAL_TRIP_DAYS, 0) * 50000)
+        ) * 0.105
+        ) AS "salDeductionTotal",
+
+        NVL(S.SAL_NET_PAY,
+        (NVL(S.SAL_BASE_PAY, NVL(SB.BASE_MIN, 0)) +
+        NVL(S.SAL_OT_PAY, NVL(OT.TOTAL_OT_HOURS, 0) * 15000) +
+        NVL(S.SAL_TRIP_PAY, NVL(BT.TOTAL_TRIP_DAYS, 0) * 50000)
+        ) * (1 - 0.105)
+        ) AS "salNetPay",
+
+        NVL(S.SAL_STTS, '미지급')    AS "salStts"
+
+        FROM
+        EMPLOYEE E
+        LEFT OUTER JOIN
+        DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        LEFT OUTER JOIN
+        SALARY_BASE SB ON TRIM(E.EMP_JBGD_CD) = TRIM(SB.EMP_JBGD_CODE)
+        LEFT OUTER JOIN
+        SALARY_MASTER S ON E.EMP_ID = S.EMP_ID AND S.SAL_MONTH = #{searchMonth}
+        LEFT OUTER JOIN (
+        SELECT
+        A.EMP_ID,
+        SUM(GREATEST(0, ROUND((A.ATT_CHECK_OUT - TO_DATE(TO_CHAR(A.ATT_WORK_DT, 'YYYY-MM-DD') || ' 18:00:00', 'YYYY-MM-DD HH24:MI:SS')) * 24, 1))) AS TOTAL_OT_HOURS
+        FROM ATTENDANCE A
+        JOIN APRV_EXCS_WORK_DOC D ON A.EMP_ID = D.EMP_ID
+        AND TO_CHAR(A.ATT_WORK_DT, 'YYYY-MM-DD') = TO_CHAR(D.EXCS_WORK_DOC_END, 'YYYY-MM-DD')
+        WHERE D.EXCS_WORK_STTS = '결재완료'
+        AND A.ATT_CHECK_OUT IS NOT NULL
+        AND TO_CHAR(A.ATT_WORK_DT, 'YYYY-MM') = #{searchMonth}
+        GROUP BY A.EMP_ID
+        ) OT ON E.EMP_ID = OT.EMP_ID
+        LEFT OUTER JOIN (
+        SELECT
+        EMP_ID,
+        SUM(BZTRP_TOTAL_DAYS) AS TOTAL_TRIP_DAYS
+        FROM APRV_BZTRP_DOC
+        WHERE BZTRP_STTS = '결재완료'
+        AND TO_CHAR(BZTRP_START, 'YYYY-MM') = #{searchMonth}
+        GROUP BY EMP_ID
+        ) BT ON E.EMP_ID = BT.EMP_ID
+        WHERE
+        E.EMP_STTS = 'Y'
+        ORDER BY
+        E.EMP_ID ASC
+    </select>
+    <!--급여확정-->
+    <insert id="insertSalary" parameterType="map">
+        INSERT INTO SALARY_MASTER (
+        EMP_ID,
+        SAL_MONTH,
+        SAL_BASE_PAY,
+        SAL_OT_PAY,
+        SAL_TRIP_PAY,
+        SAL_DEDUCTION_TOTAL,
+        SAL_NET_PAY,
+        SAL_STTS,
+        SAL_CREATED_DT,
+        SAL_UPDATE_DT
+        ) VALUES (
+        #{empId},
+        #{salMonth},
+        #{salBasePay},
+        #{salOtPay},
+        #{salTripPay},
+        #{salDeductionTotal},
+        #{salNetPay},
+        'SENT',
+        SYSDATE, SYSDATE)
+    </insert>
+
+    <!--통계차트1-->
+    <select id="getDeptAvgPayment" parameterType="string" resultType="map">
+        SELECT
+        D.DEPT_NM AS "team",
+        ROUND(AVG(S.SAL_NET_PAY), 0) AS "value",
+        #{searchMonth} AS "thisMonth"
+        FROM SALARY_MASTER S
+        JOIN EMPLOYEE E ON S.EMP_ID = E.EMP_ID
+        JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        WHERE S.SAL_MONTH = #{searchMonth}
+        AND E.EMP_ID NOT IN (12, 26030012)
+        GROUP BY D.DEPT_NM
+        ORDER BY D.DEPT_NM ASC
+    </select>
+
+    <!--통계차트2-->
+    <select id="getRankAvgPayment" parameterType="string" resultType="map">
+        SELECT
+        E.EMP_JBGD AS "team",
+        ROUND(AVG(S.SAL_NET_PAY), 0) AS "value"
+        FROM SALARY_MASTER S
+        JOIN EMPLOYEE E ON S.EMP_ID = E.EMP_ID
+        WHERE S.SAL_MONTH = #{searchMonth}
+        AND E.EMP_ID NOT IN ('12', '26030012')
+        GROUP BY E.EMP_JBGD
+        ORDER BY "value" DESC
+    </select>
+</mapper>

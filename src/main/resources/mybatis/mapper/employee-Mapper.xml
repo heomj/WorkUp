@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.EmployeeMapper">
+
+    <select id="findByEmpId" parameterType="int" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT
+            E.EMP_ID, E.DEPT_CD, E.EMP_PW, E.EMP_NM, E.EMP_BIR, E.EMP_PHONE, E.EMP_EML, E.EMP_DOMAIN_EML,
+            E.EMP_ZIP, E.EMP_ADD1, E.EMP_ADD2, E.EMP_PROFILE, E.EMP_REGIST_DT, E.EMP_SIGN,
+            E.EMP_LAST_DT, E.EMP_MLG, E.EMP_STTS, E.EMP_JBGD, E.EMP_ROLE,
+            D.DEPT_NM,A.AVT_NO,A.AVT_SAVE_NM
+        FROM EMPLOYEE E
+            LEFT OUTER JOIN DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+            LEFT OUTER JOIN EMP_AVT EA ON (E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y')
+            LEFT OUTER JOIN AVATAR A ON (EA.AVT_NO = A.AVT_NO)
+        WHERE E.EMP_ID = #{empId}
+         AND E.EMP_STTS = 'Y'
+    </select>
+
+    <select id="findMembersByQuery" parameterType="string" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT * FROM EMPLOYEE WHERE EMP_ID LIKE '%'||#{query}||'%' OR EMP_NM LIKE '%'||#{query}||'%'
+    </select>
+
+    <update id="updateprof" parameterType="kr.or.ddit.vo.EmployeeVO">
+        UPDATE EMPLOYEE
+        <set>
+            <!-- 비밀번호, 프로필 사진, 사인은 바뀔 때만 업뎃 !-->
+            <if test="empPw != null and empPw != ''">
+                EMP_PW = #{empPw},
+            </if>
+            <if test="empProfile != null and empProfile != ''">
+                EMP_PROFILE = #{empProfile},
+            </if>
+            <if test="empSign != null and empSign != ''">
+                EMP_SIGN = #{empSign},
+            </if>
+            EMP_PHONE = #{empPhone},
+            EMP_EML = #{empEml},
+            EMP_ZIP = #{empZip},
+            EMP_ADD1 = #{empAdd1},
+            EMP_ADD2 = #{empAdd2}
+        </set>
+        WHERE EMP_ID = #{empId}
+    </update>
+
+    <!--사원의 이메일 조회
+    public EmployeeVO findEmployeeByEmail(String email)-->
+    <select id="findEmployeeByEmail" parameterType="string" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT
+        E.EMP_ID,
+        E.DEPT_CD,
+        E.EMP_PW,    E.EMP_NM,
+        E.EMP_BIR,
+        E.EMP_PHONE,
+        E.EMP_EML,
+        E.EMP_DOMAIN_EML,
+        E.EMP_ZIP,
+        E.EMP_ADD1,
+        E.EMP_ADD2,
+        E.EMP_PROFILE,
+        E.EMP_REGIST_DT,
+        E.EMP_SIGN,
+        E.EMP_LAST_DT,
+        E.EMP_MLG,
+        E.EMP_STTS,
+        E.EMP_JBGD,
+        E.EMP_ROLE,  D.DEPT_NM,
+        A.AVT_NO,
+        A.AVT_SAVE_NM
+        FROM EMPLOYEE E
+        LEFT OUTER JOIN DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+        LEFT OUTER JOIN EMP_AVT EA ON (E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y')
+        LEFT OUTER JOIN AVATAR A ON (EA.AVT_NO = A.AVT_NO)
+        WHERE E.EMP_EML = #{email}
+    </select>
+
+
+    <!-- 사원LIST 가져오기 -->
+    <select id="emplist" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT * FROM EMPLOYEE
+        WHERE EMP_ROLE != '관리자'
+            AND EMP_STTS = 'Y'
+    </select>
+
+    <!-- 관리자 정보 가져오기 -->
+    <select id="whoadmin" parameterType="int" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT *  FROM EMPLOYEE
+        WHERE EMP_ID = #{empId}
+    </select>
+
+    <!-- 사원 부서 이동 시키기 -->
+    <update id="updateDept" parameterType="kr.or.ddit.vo.EmployeeVO">
+        UPDATE EMPLOYEE SET DEPT_CD = #{deptCd} WHERE EMP_ID = #{empId}
+    </update>
+
+    <!-- 직급 변경하기-->
+    <update id="updatejbgd" parameterType="kr.or.ddit.vo.EmployeeVO">
+        UPDATE EMPLOYEE
+        SET
+        EMP_JBGD = #{empJbgd},
+        EMP_ROLE = CASE
+                    WHEN #{empJbgd} = '팀장' THEN '팀장'
+                    WHEN #{empJbgd} != '팀장' THEN '사원'
+                ELSE EMP_ROLE
+            END
+        WHERE DEPT_CD = #{deptCd}
+            AND EMP_ID = #{empId}
+    </update>
+
+    <!-- 사원 추가하기 -->
+    <insert id="insert" parameterType="kr.or.ddit.vo.EmployeeVO">
+        <selectKey keyProperty="empId" resultType="int" order="BEFORE">
+            SELECT NVL(MAX(EMP_ID), 26030000) + 1
+            FROM EMPLOYEE
+            WHERE EMP_ID LIKE '2603%'
+            AND LENGTH(TO_CHAR(EMP_ID)) = 8
+        </selectKey>
+        INSERT INTO EMPLOYEE (EMP_ID, DEPT_CD, EMP_NM, EMP_DOMAIN_EML, EMP_PW,
+        EMP_BIR,EMP_REGIST_DT,EMP_JBGD, EMP_ROLE, EMP_LVL,EMP_STTS)
+        VALUES (#{empId}, #{deptCd}, #{empNm},#{empDomainEml}, #{empPw},
+        #{empBir}, SYSDATE, '사원', '사원', 4, 'Y')
+    </insert>
+
+    <!-- 계정 관리에 쓸 사원 List 부르기(관리자) -->
+    <select id="adminemplist" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT A.EMP_ID, A.DEPT_CD, A.EMP_PW, A.EMP_NM, A.EMP_BIR, A.EMP_PHONE, A.EMP_EML, A.EMP_DOMAIN_EML
+        , A.EMP_PROFILE, A.EMP_REGIST_DT, A.EMP_LAST_DT, A.EMP_STTS, A.EMP_JBGD, A.EMP_ROLE
+        , B.DEPT_NM
+        FROM EMPLOYEE A LEFT OUTER JOIN DEPARTMENT B
+        ON A.DEPT_CD = B.DEPT_CD
+        WHERE EMP_ROLE != '관리자'
+    </select>
+
+    <!-- 퇴직 / 재직 ㅓㅂ뎃-->
+    <update id="sttschg" parameterType="kr.or.ddit.vo.EmployeeVO">
+        UPDATE EMPLOYEE
+        <set>
+            <if test='empStts == "N"'>
+                EMP_LAST_DT = SYSDATE,
+            </if>
+            <if test='empStts == "Y"'>
+                EMP_LAST_DT = NULL,
+            </if>
+            EMP_STTS = #{empStts}
+        </set>
+        WHERE EMP_ID = #{empId}
+    </update>
+
+    <!-- 차트 가져오기 -->
+    <select id="empstts" resultType="java.util.Map">
+        SELECT TO_CHAR(dt, 'YYYY') AS month, D.DEPT_NM AS name,
+        SUM(CASE WHEN type = 'H' THEN 1 ELSE 0 END) AS h,
+        SUM(CASE WHEN type = 'F' THEN 1 ELSE 0 END) AS f
+        FROM (
+            SELECT EMP_REGIST_DT AS dt, DEPT_CD, 'H' AS type
+                FROM EMPLOYEE
+            WHERE EMP_REGIST_DT IS NOT NULL
+         UNION ALL
+            SELECT EMP_LAST_DT dt, DEPT_CD, 'F' AS type
+                FROM EMPLOYEE
+            WHERE EMP_LAST_DT IS NOT NULL
+        ) E
+        JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        GROUP BY TO_CHAR(dt, 'YYYY'), D.DEPT_NM
+        ORDER BY month, name
+    </select>
+
+    <!-- 비밀번호 찾기 때 / 사번 & 전화번호 일치하는지 -->
+    <select id="findpw" resultType="int" parameterType="kr.or.ddit.vo.EmployeeVO">
+        SELECT COUNT(*) FROM EMPLOYEE WHERE EMP_ID = #{empId} AND EMP_PHONE = #{empPhone}
+    </select>
+
+    <update id="updatepw" parameterType="kr.or.ddit.vo.EmployeeVO">
+        UPDATE EMPLOYEE SET EMP_PW = #{empPw} WHERE EMP_ID = #{empId}
+    </update>
+
+    <insert id="temporary" parameterType="kr.or.ddit.vo.EmployeeVO">
+        <selectKey keyProperty="tmprPswdNo" resultType="int" order="BEFORE">
+            SELECT NVL(MAX(TMPR_PSWD_NO), 0) + 1 FROM TEMPORARY_PASSWORD
+        </selectKey>
+
+        INSERT INTO TEMPORARY_PASSWORD (TMPR_PSWD_NO, EMP_ID, TMPR_PSWD, TMPR_PSWD_ISSU_DT, TMPR_PSWD_STTS)
+        VALUES (#{tmprPswdNo}, #{empId}, #{tmprPswd}, SYSDATE, 'Y')
+    </insert>
+    <!-- 비밀번호 찾기 때 / 사번 & 전화번호 일치하는지 끝 -->
+
+
+</mapper>

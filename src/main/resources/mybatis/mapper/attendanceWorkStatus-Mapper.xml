@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.AttendanceWorkStatusMapper">
+
+    <!--근무자 상태값 받아오기
+    public String getWorkStatus(int empId)-->
+    <select id="getWorkStatus" parameterType="int" resultType="String">
+        SELECT ATT_WORK_STTS
+        FROM ATTENDANCE_WORK_STATUS
+        WHERE EMP_ID = #{empId}
+    </select>
+
+    <!--메퍼만들기 귀찮아서 잠시 빌려씁니다  관리자 데쉬보드 DBTraffic 쿼리-->
+    <select id="getDbTrafficData" resultType="map">
+        <![CDATA[
+    SELECT
+        TO_CHAR(activity_dt, 'YYYY-MM-DD HH24:MI') AS activity_time,
+        /* 🎯 각 테이블별 카운트 추출 (리액트 툴팁용) */
+        SUM(CASE WHEN type = 'ATT'  THEN 1 ELSE 0 END) AS att_cnt,
+        SUM(CASE WHEN type = 'TASK' THEN 1 ELSE 0 END) AS task_cnt,
+        SUM(CASE WHEN type = 'APRV' THEN 1 ELSE 0 END) AS aprv_cnt,
+        SUM(CASE WHEN type = 'CAL'  THEN 1 ELSE 0 END) AS cal_cnt,
+        SUM(CASE WHEN type = 'MAIL' THEN 1 ELSE 0 END) AS mail_cnt,
+        SUM(CASE WHEN type = 'ALRM' THEN 1 ELSE 0 END) AS alrm_cnt,
+        SUM(CASE WHEN type = 'CHAT' THEN 1 ELSE 0 END) AS chat_cnt,
+        /* 전체 합계 */
+        COUNT(*) AS total_count
+    FROM (
+        /* 1. 근태 (Type: ATT) */
+        SELECT 'ATT' AS type,
+            CASE
+                WHEN LENGTH(TRIM(TO_CHAR(ATT_DAY_TIME))) = 8
+                    THEN TO_DATE(TRIM(TO_CHAR(ATT_DAY_TIME)), 'YYYYMMDD')
+                WHEN LENGTH(TRIM(TO_CHAR(ATT_DAY_TIME))) >= 12
+                    THEN TO_DATE(SUBSTR(TRIM(TO_CHAR(ATT_DAY_TIME)), 1, 12), 'YYYYMMDDHH24MI')
+                ELSE CAST(NULL AS DATE)
+            END AS activity_dt
+        FROM ATTENDANCE
+        WHERE ATT_DAY_TIME IS NOT NULL
+
+        UNION ALL
+
+        /* 2. 업무 (Type: TASK) */
+        SELECT 'TASK', TASK_MDFCN_DT FROM TASK WHERE TASK_MDFCN_DT IS NOT NULL UNION ALL
+
+        /* 3. 결재 (Type: APRV) */
+        SELECT 'APRV', APRV_DT FROM APPROVAL WHERE APRV_DT IS NOT NULL UNION ALL
+
+        /* 4. 일정 (Type: CAL) */
+        SELECT 'CAL', CAL_UPDATE FROM CALENDAR WHERE CAL_UPDATE IS NOT NULL UNION ALL
+
+        /* 5. 메일 (Type: MAIL) */
+        SELECT 'MAIL', EML_SNDNG_DT FROM EMAIL WHERE EML_SNDNG_DT IS NOT NULL UNION ALL
+        SELECT 'MAIL', EML_RCVNG_DT FROM EMAIL WHERE EML_RCVNG_DT IS NOT NULL UNION ALL
+
+        /* 6. 알림 (Type: ALRM) */
+        SELECT 'ALRM', ALM_SNDR_TM FROM ALARM WHERE ALM_SNDR_TM IS NOT NULL UNION ALL
+
+        /* 7. 채팅 (Type: CHAT) */
+        SELECT 'CHAT', CHAT_DT FROM CHAT_LOG WHERE CHAT_DT IS NOT NULL
+    )
+    WHERE activity_dt IS NOT NULL
+      AND activity_dt >= ADD_MONTHS(SYSDATE, -1)
+    GROUP BY TO_CHAR(activity_dt, 'YYYY-MM-DD HH24:MI')
+    ORDER BY activity_time ASC
+    ]]>
+    </select>
+</mapper>

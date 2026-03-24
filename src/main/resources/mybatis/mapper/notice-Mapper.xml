@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.NoticeMapper">
+
+    <sql id="where">
+	    <if test="ntcStts != null and ntcStts != ''">
+	        AND A.NTC_STTS = #{ntcStts}
+	    </if>
+	    <if test="keyword != null and keyword != ''">
+	        AND (
+	            A.NTC_TTL LIKE '%' || #{keyword} || '%' OR                     
+	            A.NTC_CN  LIKE '%' || #{keyword} || '%' OR                      
+	            B.EMP_NM  LIKE '%' || #{keyword} || '%' OR                      
+	            TO_CHAR(A.NTC_DT, 'YYYY-MM-DD HH24:MI') LIKE '%' || #{keyword} || '%' OR
+	            TO_CHAR(A.NTC_DT, 'YYYYMMDD') LIKE '%' || #{keyword} || '%'
+	        )
+	    </if>
+	</sql>
+
+    <resultMap type="kr.or.ddit.vo.NoticeVO" id="noticeMap">
+        <id property="ntcNo" column="NTC_NO" />
+        <result property="empId" column="EMP_ID" />
+        <result property="ntcTtl" column="NTC_TTL" />
+        <result property="ntcCn" column="NTC_CN" /> 
+        <result property="ntcStts" column="NTC_STTS" />
+        <result property="ntcDt" column="NTC_DT" /> 
+        <result property="ntcCnt" column="NTC_CNT" />
+        <result property="fileId" column="FILE_ID" />
+        <result property="ntcDelYn" column="NTC_DEL_YN" />
+        <result property="ntcDeptCd" column="NTC_DEPT_CD" />
+        <result property="empNm" column="EMP_NM" />
+        <result property="fileCount" column="FILE_COUNT" />
+        <result property="fileNames" column="FILE_NAMES" /> 
+        <result property="prevNo" column="PREV_NO" />
+        <result property="prevTtl" column="PREV_TTL" />
+        <result property="nextNo" column="NEXT_NO" />
+        <result property="nextTtl" column="NEXT_TTL" />
+        <association property="fileTbVO" resultMap="fileTbMap" />
+    </resultMap>
+    
+    <resultMap type="kr.or.ddit.vo.FileTbVO" id="fileTbMap">
+        <id property="fileId" column="FILE_ID"/>
+        <collection property="fileDetailVOList" resultMap="fileDetailMap" />
+    </resultMap>
+    
+    <resultMap type="kr.or.ddit.vo.FileDetailVO" id="fileDetailMap">
+        <id property="fileDtlId" column="FILE_DTL_ID"/>
+        <result property="fileDtlONm" column="FILE_DTL_O_NM"/>
+        <result property="fileDtlSaveNm" column="FILE_DTL_SAVE_NM"/>
+        <result property="fileDtlPath" column="FILE_DTL_PATH"/>
+        <result property="fileDtlExt" column="FILE_DTL_EXT"/>
+    </resultMap>
+
+    <insert id="insertNotice" parameterType="kr.or.ddit.vo.NoticeVO">
+	    <selectKey resultType="int" order="BEFORE" keyProperty="ntcNo">
+	        SELECT NVL(MAX(NTC_NO), 0) + 1 FROM NOTICE
+	    </selectKey>
+	    INSERT INTO NOTICE (
+	        NTC_NO, NTC_DEPT_CD, EMP_ID, NTC_TTL, NTC_CN, 
+	        NTC_STTS, NTC_DT, NTC_CNT, FILE_ID, NTC_DEL_YN
+	    ) VALUES (
+	        #{ntcNo}, 
+	        #{ntcDeptCd, jdbcType=INTEGER}, 
+	        #{empId, jdbcType=INTEGER}, 
+	        #{ntcTtl, jdbcType=VARCHAR}, 
+	        #{ntcCn, jdbcType=CLOB}, 
+	        #{ntcStts, jdbcType=VARCHAR}, 
+	        SYSDATE, 0, 
+	        #{fileId, jdbcType=BIGINT}, 'N'
+	    )
+	</insert>
+
+    <select id="selectNoticeList" parameterType="hashMap" resultMap="noticeMap">
+	    <bind name="startRow" value="(currentPage - 1) * size + 1" />
+	    <bind name="endRow" value="currentPage * size" />
+	
+	    SELECT T.*
+	    FROM (
+	        SELECT 
+	            ROW_NUMBER() OVER(ORDER BY CASE WHEN A.NTC_STTS IN ('중요', '긴급') THEN 1 ELSE 2 END, A.NTC_NO DESC) RNUM
+	            , A.NTC_NO, A.NTC_TTL, A.NTC_DT, A.NTC_CNT, A.FILE_ID, A.NTC_STTS, A.NTC_DEPT_CD, A.NTC_CN
+	            , B.EMP_NM
+	            , (SELECT COUNT(*) FROM FILE_DETAIL FD WHERE FD.FILE_ID = A.FILE_ID) AS FILE_COUNT
+	            , (SELECT LISTAGG(FD.FILE_DTL_O_NM, ', ') WITHIN GROUP(ORDER BY FD.FILE_DTL_ID) 
+	               FROM FILE_DETAIL FD WHERE FD.FILE_ID = A.FILE_ID) AS FILE_NAMES
+	            /* [추가] 파일 상세 정보 컬럼 (ResultMap의 collection을 채우기 위함) */
+	            , FD.FILE_DTL_ID
+	            , FD.FILE_DTL_O_NM
+	        FROM NOTICE A
+	        LEFT OUTER JOIN EMPLOYEE B ON(A.EMP_ID = B.EMP_ID)
+	        /* [추가] 파일 상세 테이블 조인 */
+	        LEFT OUTER JOIN FILE_DETAIL FD ON(A.FILE_ID = FD.FILE_ID)
+	        WHERE A.NTC_DEL_YN = 'N'
+	        <include refid="where" /> 
+	    ) T
+	    WHERE T.RNUM BETWEEN #{startRow} AND #{endRow}
+	</select>
+    
+    <select id="selectNoticeCount" parameterType="hashMap" resultType="int">
+	    SELECT COUNT(*) 
+	    FROM   NOTICE A
+	    LEFT OUTER JOIN EMPLOYEE B ON(A.EMP_ID = B.EMP_ID)
+	    WHERE  A.NTC_DEL_YN = 'N'
+	    <include refid="where" /> 
+	</select>
+
+    <select id="selectNoticeDetail" parameterType="int" resultMap="noticeMap">
+	    <![CDATA[
+	    SELECT 
+	        A.NTC_NO, A.NTC_TTL, A.NTC_CN, A.NTC_DT, A.NTC_CNT, A.NTC_STTS,
+	        A.EMP_ID, A.FILE_ID, A.EMP_NM,
+	        A.PREV_NO, A.PREV_TTL, A.NEXT_NO, A.NEXT_TTL,
+	        FD.FILE_DTL_ID,
+	        FD.FILE_DTL_O_NM,
+	        FD.FILE_DTL_SAVE_NM,
+	        FD.FILE_DTL_PATH,
+	        FD.FILE_DTL_EXT,
+	        CASE WHEN A.FILE_ID > 0 THEN (SELECT COUNT(*) FROM FILE_DETAIL WHERE FILE_ID = A.FILE_ID)
+	             ELSE 0 END AS FILE_COUNT,
+	        CASE WHEN A.FILE_ID > 0 THEN (SELECT LISTAGG(FILE_DTL_O_NM, ', ') WITHIN GROUP (ORDER BY FILE_DTL_ID)
+	                                      FROM FILE_DETAIL
+	                                      WHERE FILE_ID = A.FILE_ID
+	                                      GROUP BY FILE_ID)
+	             ELSE NULL END AS FILE_NAMES
+	    FROM (
+	        SELECT 
+	            N.NTC_NO, N.NTC_TTL, N.NTC_CN, N.NTC_DT, N.NTC_CNT, N.NTC_STTS,
+	            N.EMP_ID, N.FILE_ID, E.EMP_NM,
+	            LAG(N.NTC_NO) OVER (ORDER BY N.NTC_NO ASC) AS PREV_NO,
+	            LAG(N.NTC_TTL) OVER (ORDER BY N.NTC_NO ASC) AS PREV_TTL,
+	            LEAD(N.NTC_NO) OVER (ORDER BY N.NTC_NO ASC) AS NEXT_NO,
+	            LEAD(N.NTC_TTL) OVER (ORDER BY N.NTC_NO ASC) AS NEXT_TTL
+	        FROM NOTICE N
+	        LEFT OUTER JOIN EMPLOYEE E ON (N.EMP_ID = E.EMP_ID)
+	        WHERE N.NTC_DEL_YN = 'N'
+	    ) A
+	    LEFT OUTER JOIN FILE_DETAIL FD ON (A.FILE_ID = FD.FILE_ID AND A.FILE_ID > 0)
+	    WHERE A.NTC_NO = #{ntcNo}
+	    ]]>
+	</select>
+
+    <update id="incrementViewCount" parameterType="int">
+        UPDATE NOTICE
+        SET    NTC_CNT = NTC_CNT + 1
+        WHERE  NTC_NO = #{ntcNo}
+    </update>
+
+    <update id="updateNotice" parameterType="kr.or.ddit.vo.NoticeVO">
+        UPDATE NOTICE
+        SET    NTC_TTL = #{ntcTtl},
+               NTC_CN = #{ntcCn},
+               NTC_STTS = #{ntcStts}
+               <if test="fileId != null and fileId != 0">
+               , FILE_ID = #{fileId}
+               </if>
+        WHERE  NTC_NO = #{ntcNo}
+    </update>
+
+    <update id="deleteNotice" parameterType="int">
+        UPDATE NOTICE
+        SET    NTC_DEL_YN = 'Y',
+               NTC_DEL_DT = SYSDATE
+        WHERE  NTC_NO = #{ntcNo}
+    </update>
+	
+	<update id="migrateFiles" parameterType="map">
+	    UPDATE FILE_DETAIL
+	    SET    FILE_ID = #{newFileId}
+	    WHERE  FILE_ID = #{oldFileId}
+	</update>
+    
+    <delete id="deleteFileDetail" parameterType="String">
+	    DELETE FROM FILE_DETAIL 
+	    WHERE FILE_DTL_ID = #{fileDtlId}
+	</delete>
+	
+	<select id="selectLatestUrgentNotice" resultType="noticeVO">
+	    SELECT * FROM (
+	        SELECT 
+	            NTC_NO, NTC_TTL, NTC_CN, NTC_DT, NTC_CNT, NTC_STTS, EMP_ID
+	        FROM NOTICE
+	        WHERE NTC_STTS = '긴급'
+	          AND NTC_DEL_YN = 'N'
+	        ORDER BY NTC_DT DESC, NTC_NO DESC
+	    )
+	    WHERE ROWNUM = 1
+	</select>
+</mapper>

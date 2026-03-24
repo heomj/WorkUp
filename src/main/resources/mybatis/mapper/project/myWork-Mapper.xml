@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.project.MyWorkMapper">
+
+    <!--리스트 뽑을 resultMap-->
+    <resultMap id="participantMap" type="kr.or.ddit.vo.project.TaskParticipantVO">
+        <id property="prtpntNo" column="PRTPNT_NO"/>
+        <result property="empId" column="PART_EMP_ID"/>
+        <result property="prtpntColor" column="PRTPNT_COLOR"/>
+        <result property="taskNo" column="TASK_NO"/> </resultMap>
+
+    <resultMap id="taskMap" type="kr.or.ddit.vo.project.TaskVO">
+        <id property="taskNo" column="TASK_NO"/>
+        <result property="projNo" column="PROJ_NO"/>
+        <result property="taskUpNo" column="TASK_UP_NO"/>
+        <result property="empId" column="TASK_WRITER_ID"/>
+        <result property="taskNm" column="TASK_NM"/>
+        <result property="taskTtl" column="TASK_TTL"/>
+        <result property="taskCn" column="TASK_CN"/>
+        <result property="taskStts" column="TASK_STTS"/>
+        <result property="taskPrgrt" column="TASK_PRGRT"/>
+        <result property="taskImpt" column="TASK_IMPT"/>
+        <result property="taskRnk" column="TASK_RNK"/>
+        <result property="taskCrtDt" column="TASK_CRT_DT"/>
+        <result property="taskMdfcnDt" column="TASK_MDFCN_DT"/>
+        <result property="taskActlBgngDt" column="TASK_ACTL_BGNG_DT"/>
+        <result property="taskBgngDt" column="TASK_BGNG_DT"/>
+        <result property="taskEndDt" column="TASK_END_DT"/>
+        <collection property="taskParticipantVOList" resultMap="participantMap"/>
+    </resultMap>
+
+    <resultMap id="projectMap" type="kr.or.ddit.vo.project.ProjectVO">
+        <id property="projNo" column="PROJ_NO"/>
+        <result property="empId" column="PROJ_LEADER_ID"/>
+        <result property="projNm" column="PROJ_NM"/>
+        <result property="projTtl" column="PROJ_TTL"/>
+        <result property="projPrgrt" column="projPrgrt"/>
+        <result property="projBgngDt" column="PROJ_BGNG_DT"/>
+        <result property="projEndDt" column="PROJ_END_DT"/>
+        <result property="projStts" column="PROJ_STTS"/>
+        <result property="projDtl" column="PROJ_DTL"/>
+        <result property="projColor" column="PROJ_COLOR"/>
+        <result property="projIpt" column="PROJ_IPT"/>
+        <collection property="taskVOList" resultMap="taskMap"/>
+    </resultMap>
+
+    <!--내 프로잭트 List-->
+    <select id="toMyWorkList" parameterType="int" resultMap="projectMap">
+        SELECT A.*,
+            T.*,
+            TP.*,
+            (SELECT NVL(ROUND(AVG(TASK_PRGRT)), 0)
+            FROM TASK T
+            WHERE T.PROJ_NO = A.PROJ_NO) AS projPrgrt
+        FROM PROJECT A
+        LEFT OUTER JOIN PROJECT_PARTICIPANT B ON A.PROJ_NO = B.PROJ_NO
+        LEFT OUTER JOIN TASK T ON T.PROJ_NO = A.PROJ_NO
+        LEFT OUTER JOIN TASK_PARTICIPANT TP ON T.TASK_NO = TP.TASK_NO
+        WHERE B.EMP_ID = #{empId}
+        ORDER BY
+            CASE WHEN A.PROJ_STTS = '완료' THEN 2 ELSE 1 END ASC,
+            A.PROJ_END_DT ASC,
+            A.PROJ_IPT DESC
+    </select>
+
+    <!--일감수정-->
+    <update id="updateTask" parameterType="kr.or.ddit.vo.project.TaskVO">
+        UPDATE TASK
+        SET
+            TASK_TTL = #{taskTtl},
+            TASK_NM = #{taskNm},
+            TASK_CN = #{taskCn},
+            TASK_STTS = #{taskStts},
+            TASK_PRGRT = #{taskPrgrt},
+            TASK_IMPT = #{taskImpt},
+            TASK_BGNG_DT = #{taskBgngDt},
+            TASK_END_DT = #{taskEndDt},
+            TASK_ACTL_BGNG_DT = #{taskActlBgngDt},
+            TASK_MDFCN_DT = SYSDATE
+        WHERE TASK_NO = #{taskNo}
+    </update>
+
+
+</mapper>

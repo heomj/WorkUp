@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="kr.or.ddit.mapper.BudgetMapper">
+
+    <!-- 부서별 예산 삽입/수정 -->
+    <update id="mergeBudgetMaster" parameterType="budgetMasterVO">
+        MERGE
+            INTO BUDGET_MASTER M
+                USING DUAL
+                ON (
+                    M.DEPT_CD = #{deptCd}
+                        AND M.BGT_YR = #{bgtYr}
+                    )
+                WHEN MATCHED THEN
+                    UPDATE
+                        SET M.BGT_TOT_AMT = M.BGT_TOT_AMT + #{bgtTotAmt}
+                WHEN NOT MATCHED THEN
+                    INSERT
+                        (
+                         BGT_M_CD
+                        , DEPT_CD
+                        , BGT_YR
+                        , BGT_TOT_AMT
+                        , BGT_STTS
+                        , BGT_REG_DT
+                        )
+                        VALUES
+                            (
+                              SEQ_BGT_M_CD.NEXTVAL
+                            , #{deptCd}
+                            , #{bgtYr}
+                            , #{bgtTotAmt}
+                            , '정상'
+                            , SYSDATE
+                            )
+    </update>
+
+
+    <!-- 상세(비목) 수정/삽입 -->
+    <update id="mergeBudgetDetail">
+        MERGE
+            INTO BUDGET_DETAIL D
+                USING DUAL
+                ON (
+                    D.BGT_M_CD = #{bgtMCd} AND D.BGT_ITM_NM = #{detail.bgtItmNm}
+                    )
+                WHEN MATCHED THEN
+                    UPDATE
+                        SET D.BGT_AMT = D.BGT_AMT + #{detail.bgtAmt}
+                WHEN NOT MATCHED THEN
+                    INSERT
+                        (
+                         BGT_CD
+                        , BGT_M_CD
+                        , BGT_ITM_NM
+                        , BGT_AMT
+                        , BGT_EXCN
+                        , BGT_DETAIL_STTS
+                        )
+                        VALUES
+                            (
+                              SEQ_BGT_CD.NEXTVAL
+                            , #{bgtMCd}
+                            , #{detail.bgtItmNm}
+                            , #{detail.bgtAmt}
+                            , 0
+                            , '정상'
+                            )
+    </update>
+
+
+    <!-- 로그(신규/추가배정) insert -->
+    <insert id="insertBudgetLog" parameterType="budgetMasterVO">
+        INSERT
+        INTO BUDGET_LOG
+        (
+          LOG_NO
+        , BGT_M_CD
+        , BGT_CD
+        , BGT_CHG_SE
+        , BGT_CHG_AMT
+        , BGT_CHG_RSN
+        , APRV_NO
+        , EMP_ID
+        , BGT_CHG_DT
+        )
+        VALUES
+            (
+              SEQ_BUDGET_LOG_NO.NEXTVAL
+            , #{bgtMCd}
+            , NULL
+            , #{bgtChgSe}
+            , #{bgtTotAmt}
+            , #{bgtChgRsn}
+            , #{aprvNo}
+            , #{empId}
+            , SYSDATE
+            )
+    </insert>
+
+
+    <!-- 마스터 코드 조회 -->
+    <select id="findBgtMCd" resultType="int">
+        SELECT
+            BGT_M_CD
+        FROM BUDGET_MASTER
+        WHERE DEPT_CD = #{deptCd}
+          AND BGT_YR = #{bgtYr}
+    </select>
+
+    <!-- 담당자 조회 조회 -->
+    <select id="searchBudgetEmp" resultType="employeeVO" parameterType="map">
+        SELECT
+              EMP_ID
+            , EMP_NM
+            , FN_GET_DEPT_NM(DEPT_CD) AS DEPT_NM
+        FROM EMPLOYEE
+        WHERE EMP_STTS = 'Y'
+          AND (
+            EMP_ID LIKE '%' || #{keyword} || '%' OR
+            EMP_NM LIKE '%' || #{keyword} || '%'
+            )
+    </select>
+
+
+    <!-- 메인 첫화면에 띄울 예산 목록(999는 사내동호회로 뜨게 예외(케이스) 추가함) -->
+    <select id="getBudgetList" resultType="budgetDetailVO" parameterType="int">
+        SELECT
+            M.BGT_M_CD
+             , M.DEPT_CD
+             , CASE
+                   WHEN M.DEPT_CD = '999' THEN '사내 동호회'
+                   ELSE FN_GET_DEPT_NM(M.DEPT_CD)
+            END AS DEPT_NM
+             , M.BGT_YR
+             , D.BGT_CD
+             , D.BGT_ITM_NM
+             , D.BGT_AMT
+             , D.BGT_EXCN
+             , D.BGT_DETAIL_STTS
+             , M.BGT_STTS
+        FROM BUDGET_MASTER M
+                 JOIN BUDGET_DETAIL D ON M.BGT_M_CD = D.BGT_M_CD
+        WHERE M.BGT_YR = #{yearFilter}
+        ORDER BY TO_NUMBER(M.DEPT_CD) ASC, D.BGT_ITM_NM ASC
+    </select>
+
+
+    <!-- 사용률 차트(부서코드 정렬) 999번은 사내동호회, 부서 코드로 정렬 -->
+    <select id="getUsageStats" resultType="map" parameterType="int">
+        SELECT
+            CASE
+                WHEN M.DEPT_CD = '999' THEN '사내 동호회'
+                ELSE FN_GET_DEPT_NM(M.DEPT_CD)
+                END AS "team",
+
+            ROUND(CASE WHEN SUM(D.BGT_AMT) = 0 THEN 0
+                       ELSE (SUM(D.BGT_EXCN) / SUM(D.BGT_AMT)) * 100 END, 1) AS "value",
+
+            SUM(D.BGT_EXCN) AS "usedAmt",
+            SUM(D.BGT_AMT) AS "totAmt"
+
+        FROM BUDGET_MASTER M
+                 JOIN BUDGET_DETAIL D ON M.BGT_M_CD = D.BGT_M_CD
+        WHERE M.BGT_YR = #{year}
+        GROUP BY M.DEPT_CD
+        ORDER BY TO_NUMBER(M.DEPT_CD) ASC
+    </select>
+
+    <!-- 월별 예산 소진 데이터 -->
+    <select id="getMonthlyStats" resultType="map" parameterType="int">
+        SELECT
+            EXTRACT(MONTH FROM L.BGT_CHG_DT) || '월' AS "month",
+            SUM(CASE
+                    WHEN M.DEPT_CD = '1' AND L.BGT_CHG_SE = '지출' THEN L.BGT_CHG_AMT
+                    WHEN M.DEPT_CD = '1' AND L.BGT_CHG_SE = '반려복구' THEN -L.BGT_CHG_AMT
+                    ELSE 0 END) AS "개발1팀",
+
+            SUM(CASE
+                    WHEN M.DEPT_CD = '2' AND L.BGT_CHG_SE = '지출' THEN L.BGT_CHG_AMT
+                    WHEN M.DEPT_CD = '2' AND L.BGT_CHG_SE = '반려복구' THEN -L.BGT_CHG_AMT
+                    ELSE 0 END) AS "개발2팀",
+
+            SUM(CASE
+                    WHEN M.DEPT_CD = '3' AND L.BGT_CHG_SE = '지출' THEN L.BGT_CHG_AMT
+                    WHEN M.DEPT_CD = '3' AND L.BGT_CHG_SE = '반려복구' THEN -L.BGT_CHG_AMT
+                    ELSE 0 END) AS "개발3팀",
+
+            SUM(CASE
+                    WHEN M.DEPT_CD = '4' AND L.BGT_CHG_SE = '지출' THEN L.BGT_CHG_AMT
+                    WHEN M.DEPT_CD = '4' AND L.BGT_CHG_SE = '반려복구' THEN -L.BGT_CHG_AMT
+                    ELSE 0 END) AS "영업팀",
+
+            SUM(CASE
+                    WHEN M.DEPT_CD = '5' AND L.BGT_CHG_SE = '지출' THEN L.BGT_CHG_AMT
+                    WHEN M.DEPT_CD = '5' AND L.BGT_CHG_SE = '반려복구' THEN -L.BGT_CHG_AMT
+                    ELSE 0 END) AS "경영지원팀",
+
+            SUM(CASE
+                    WHEN M.DEPT_CD = '999' AND L.BGT_CHG_SE = '지출' THEN L.BGT_CHG_AMT
+                    WHEN M.DEPT_CD = '999' AND L.BGT_CHG_SE = '반려복구' THEN -L.BGT_CHG_AMT
+                    ELSE 0 END) AS "사내 동호회"
+
+        FROM BUDGET_LOG L
+                 INNER JOIN BUDGET_MASTER M ON L.BGT_M_CD = M.BGT_M_CD
+        WHERE EXTRACT(YEAR FROM L.BGT_CHG_DT) = #{year}
+          AND L.BGT_CHG_SE IN ('지출', '반려복구')
+        GROUP BY EXTRACT(MONTH FROM L.BGT_CHG_DT)
+        ORDER BY EXTRACT(MONTH FROM L.BGT_CHG_DT)
+    </select>
+
+    <!-- (관리자용) 전체 로그 목록 조회 -->
+    <select id="allLogList" parameterType="hashMap" resultType="BudgetLogVO">
+        SELECT
+        L.LOG_NO
+        , L.BGT_CHG_DT
+        , CASE WHEN M.DEPT_CD = '999' THEN '사내 동호회'
+        ELSE D.DEPT_NM END AS deptNM
+
+        -- 비목명이 null이면 '-' 또는 '정보없음'으로 표시
+        , NVL(BD.BGT_ITM_NM, '-') AS BGT_ITM_NM
+
+        , L.BGT_CHG_SE
+        , L.BGT_CHG_AMT
+        , L.BGT_CHG_RSN
+        , E.EMP_NM
+        , L.APRV_NO
+        , A.APRV_TTL
+        FROM BUDGET_LOG L
+        JOIN BUDGET_MASTER M ON L.BGT_M_CD = M.BGT_M_CD
+
+        -- 여기를 LEFT OUTER JOIN으로 바꿔야 null 데이터도 보임
+        LEFT OUTER JOIN BUDGET_DETAIL BD ON L.BGT_CD = BD.BGT_CD
+
+        LEFT OUTER JOIN DEPARTMENT D ON M.DEPT_CD = D.DEPT_CD
+        LEFT OUTER JOIN EMPLOYEE E ON L.EMP_ID = E.EMP_ID
+        LEFT OUTER JOIN APPROVAL A ON L.APRV_NO = A.APRV_NO
+        WHERE 1 = 1
+
+        <choose>
+            <when test="bgtYr != null and bgtYr != ''">
+                AND M.BGT_YR = #{bgtYr}
+            </when>
+            <otherwise>
+                AND M.BGT_YR = TO_CHAR(SYSDATE, 'YYYY')
+            </otherwise>
+        </choose>
+
+        <if test="deptCd != null and deptCd != ''">
+            AND M.DEPT_CD = #{deptCd}
+        </if>
+
+        <if test="bgtChgSe != null and bgtChgSe != ''">
+            AND L.BGT_CHG_SE = #{bgtChgSe}
+        </if>
+
+        <if test="keyword != null and keyword != ''">
+            <choose>
+                <when test="mode != null and mode.equals('aprvTtl')">
+                    AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+                </when>
+                <when test="mode != null and mode.equals('bgtChgRsn')">
+                    AND L.BGT_CHG_RSN LIKE '%' || #{keyword} || '%'
+                </when>
+                <when test="mode != null and mode.equals('empNm')">
+                    AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+                </when>
+                <otherwise>
+                    AND (
+                    A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+                    L.BGT_CHG_RSN LIKE '%' || #{keyword} || '%' OR
+                    E.EMP_NM LIKE '%' || #{keyword} || '%'
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        ORDER BY L.BGT_CHG_DT DESC, L.LOG_NO DESC
+    </select>
+
+    <!-- 부서별 차트(null이면 0나오게 nvl사용) -->
+    <select id="getDeptBudgetSum" resultType="map">
+        SELECT
+            NVL(SUM(D.BGT_AMT), 0) AS "bgtAmt",
+            NVL(SUM(D.BGT_EXCN), 0) AS "bgtExcn"
+        FROM BUDGET_MASTER M
+                 INNER JOIN BUDGET_DETAIL D ON M.BGT_M_CD = D.BGT_M_CD
+        WHERE M.DEPT_CD = #{deptCd}
+          AND M.BGT_YR = #{currentYear}
+    </select>
+
+
+
+
+
+
+
+
+</mapper>

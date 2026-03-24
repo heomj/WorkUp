@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.DataMapper">
+
+    <sql id="where">
+	    <if test="dataType != null and dataType != ''">
+	        AND A.DATA_TYPE = #{dataType}
+	    </if>
+	    <if test="keyword != null and keyword != ''">
+	        AND (
+	            A.DATA_NM  LIKE '%' || #{keyword} || '%' OR                     
+	            A.DATA_CN  LIKE '%' || #{keyword} || '%' OR                      
+	            B.EMP_NM   LIKE '%' || #{keyword} || '%' OR                      
+	            TO_CHAR(A.DATA_DT, 'YYYY-MM-DD HH24:MI') LIKE '%' || #{keyword} || '%' OR
+	            TO_CHAR(A.DATA_DT, 'YYYYMMDD') LIKE '%' || #{keyword} || '%'
+	        )
+	    </if>
+	</sql>
+    
+    <resultMap type="kr.or.ddit.vo.FileDetailVO" id="fileDetailMap">
+        <id property="fileDtlId" column="FILE_DTL_ID"/>
+        <result property="fileDtlONm" column="FILE_DTL_O_NM"/>
+        <result property="fileDtlSaveNm" column="FILE_DTL_SAVE_NM"/>
+        <result property="fileDtlPath" column="FILE_DTL_PATH"/>
+        <result property="fileDtlExt" column="FILE_DTL_EXT"/>
+    </resultMap>
+    
+    <resultMap type="kr.or.ddit.vo.FileTbVO" id="fileTbMap">
+        <id property="fileId" column="FILE_ID"/>
+        <collection property="fileDetailVOList" resultMap="fileDetailMap" />
+    </resultMap>
+    
+    <resultMap id="dataMap" type="kr.or.ddit.vo.DataVO">
+        <id property="dataNo" column="DATA_NO"/>
+        <result property="empId" column="EMP_ID"/>
+        <result property="empNm" column="EMP_NM"/> 
+        <result property="dataDeptCd" column="DATA_DEPT_CD"/>
+        <result property="dataNm" column="DATA_NM"/>
+        <result property="dataCn" column="DATA_CN" jdbcType="CLOB" javaType="java.lang.String"/> 
+        <result property="dataType" column="DATA_TYPE"/>
+        <result property="dataDt" column="DATA_DT"/>
+        <result property="dataCnt" column="DATA_CNT"/>
+        <result property="fileId" column="FILE_ID"/>
+        <result property="dataDelYn" column="DATA_DEL_YN"/>
+        <result property="dataDelDt" column="DATA_DEL_DT"/>
+        <result property="dataShareYn" column="DATA_SHARE_YN"/>
+        <result property="dataShareDt" column="DATA_SHARE_DT"/>
+        <result property="fileCount" column="FILE_COUNT" />
+        <result property="fileNames" column="FILE_NAMES" /> 
+        <result property="prevNo" column="PREV_NO" />
+        <result property="prevTtl" column="PREV_TTL" />
+        <result property="nextNo" column="NEXT_NO" />
+        <result property="nextTtl" column="NEXT_TTL" />
+        
+        <association property="fileTbVO" javaType="kr.or.ddit.vo.FileTbVO">
+            <id property="fileId" column="FILE_ID"/> 
+            <collection property="fileDetailVOList" column="FILE_ID" select="selectFileListForList"/>
+        </association>
+    </resultMap>
+
+    <select id="selectFileListForList" resultType="kr.or.ddit.vo.FileDetailVO">
+        SELECT 
+            FILE_DTL_ID, FILE_DTL_O_NM, FILE_DTL_SAVE_NM, FILE_DTL_PATH, FILE_DTL_EXT
+        FROM FILE_DETAIL
+        WHERE FILE_ID = #{fileId}
+    </select>
+    
+    <insert id="insertData" parameterType="kr.or.ddit.vo.DataVO">
+        INSERT INTO DATA (
+            DATA_NO, EMP_ID, DATA_DEPT_CD, DATA_NM, DATA_CN,
+            DATA_TYPE, DATA_DT, DATA_CNT, FILE_ID, 
+            DATA_DEL_YN, DATA_SHARE_YN
+        ) VALUES (
+            DATA_SEQ.NEXTVAL,
+            #{empId, jdbcType=INTEGER},
+            #{dataDeptCd, jdbcType=INTEGER},
+            #{dataNm, jdbcType=VARCHAR},
+            #{dataCn, jdbcType=CLOB},   
+            #{dataType, jdbcType=VARCHAR},
+            SYSDATE, 0,
+            #{fileId, jdbcType=NUMERIC},
+            0, 'N'
+        )
+    </insert>
+
+    <select id="selectDataDetail" parameterType="kr.or.ddit.vo.DataVO" resultMap="dataMap">
+        <![CDATA[
+        SELECT 
+            A.*,
+            FD.FILE_DTL_ID, FD.FILE_DTL_O_NM, FD.FILE_DTL_SAVE_NM, FD.FILE_DTL_PATH, FD.FILE_DTL_EXT,
+            (SELECT COUNT(*) FROM FILE_DETAIL WHERE FILE_ID = A.FILE_ID) AS FILE_COUNT
+        FROM (
+            SELECT 
+                D.DATA_NO, D.DATA_NM, D.DATA_CN, D.DATA_DT, D.DATA_CNT, D.DATA_TYPE,
+                D.EMP_ID, D.FILE_ID, D.DATA_SHARE_YN, E.EMP_NM,
+                LAG(D.DATA_NO) OVER (ORDER BY D.DATA_NO ASC) AS PREV_NO,
+                LAG(D.DATA_NM) OVER (ORDER BY D.DATA_NO ASC) AS PREV_TTL,
+                LEAD(D.DATA_NO) OVER (ORDER BY D.DATA_NO ASC) AS NEXT_NO,
+                LEAD(D.DATA_NM) OVER (ORDER BY D.DATA_NO ASC) AS NEXT_TTL
+            FROM DATA D
+            LEFT OUTER JOIN EMPLOYEE E ON (D.EMP_ID = E.EMP_ID)
+            WHERE D.DATA_DEL_YN = 0
+        ) A
+        LEFT OUTER JOIN FILE_DETAIL FD ON (A.FILE_ID = FD.FILE_ID)
+        WHERE A.DATA_NO = #{dataNo}
+        ]]>
+    </select>
+
+    <select id="selectDataList" parameterType="hashMap" resultMap="dataMap">
+        <bind name="startRow" value="(currentPage - 1) * size + 1" />
+        <bind name="endRow" value="currentPage * size" />
+    
+        SELECT T.*
+        FROM (
+            SELECT 
+                ROW_NUMBER() OVER(ORDER BY CASE WHEN A.DATA_TYPE = '4' THEN 1 ELSE 2 END, A.DATA_NO DESC) RNUM
+                , A.DATA_NO, A.DATA_NM, A.DATA_DT, A.DATA_CNT, A.FILE_ID, A.DATA_TYPE, A.DATA_SHARE_YN
+                , B.EMP_NM
+                , (SELECT COUNT(*) FROM FILE_DETAIL FD WHERE FD.FILE_ID = A.FILE_ID) AS FILE_COUNT
+                , (SELECT LISTAGG(FD.FILE_DTL_O_NM, ', ') WITHIN GROUP (ORDER BY FD.FILE_DTL_ID) 
+                   FROM FILE_DETAIL FD WHERE FD.FILE_ID = A.FILE_ID) AS FILE_NAMES
+            FROM DATA A
+            LEFT OUTER JOIN EMPLOYEE B ON(A.EMP_ID = B.EMP_ID)
+            WHERE A.DATA_DEL_YN = 0
+            <include refid="where" /> 
+        ) T
+        WHERE T.RNUM BETWEEN #{startRow} AND #{endRow}
+        ORDER BY T.RNUM ASC
+    </select>
+    
+    <select id="selectDataCount" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*) 
+        FROM   DATA A
+        LEFT OUTER JOIN EMPLOYEE B ON(A.EMP_ID = B.EMP_ID)
+        WHERE  A.DATA_DEL_YN = 0
+        <include refid="where" /> 
+    </select>
+
+    <update id="updateData" parameterType="kr.or.ddit.vo.DataVO">
+        UPDATE DATA
+        SET    DATA_NM = #{dataNm},
+               DATA_CN = #{dataCn},
+               DATA_TYPE = #{dataType},
+               DATA_SHARE_YN = #{dataShareYn}
+               <if test="fileId != null and fileId != 0">
+               , FILE_ID = #{fileId}
+               </if>
+        WHERE  DATA_NO = #{dataNo}
+    </update>
+    
+    <update id="migrateFiles" parameterType="map">
+        UPDATE FILE_DETAIL
+        SET    FILE_ID = #{newFileId}
+        WHERE  FILE_ID = #{oldFileId}
+    </update>
+    
+    <delete id="deleteFileDetail" parameterType="String">
+        DELETE FROM FILE_DETAIL 
+        WHERE FILE_DTL_ID = #{fileDtlId}
+    </delete>
+
+    <update id="deleteData" parameterType="int">
+        UPDATE DATA
+        SET    DATA_DEL_YN = 1, DATA_DEL_DT = SYSDATE
+        WHERE  DATA_NO = #{dataNo}
+    </update>
+
+    <update id="incrementViewCount" parameterType="int">
+        UPDATE DATA
+        SET    DATA_CNT = DATA_CNT + 1
+        WHERE  DATA_NO = #{dataNo}
+    </update>
+    
+</mapper>

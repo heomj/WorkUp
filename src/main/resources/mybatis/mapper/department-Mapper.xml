@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.DepartmentMapper">
+
+<!-- [공유 JS트리] -->    
+    <!-- 트리 - 개인(부서에서 개인으로 트리 구성) -->
+	<select id="indivList" resultMap="departmentMap">
+        SELECT DEPT_CD, DEPT_NM
+        FROM DEPARTMENT 
+        ORDER BY DEPT_CD ASC
+    </select>
+    
+
+	<!-- 부서 리스트 -->
+	<select id="partList" resultMap="departmentMap">
+        SELECT DEPT_CD, DEPT_NM, 
+    		(SELECT COUNT(*) FROM EMPLOYEE E WHERE E.DEPT_CD = D.DEPT_CD) AS DEPT_COUNT
+		FROM DEPARTMENT D
+        ORDER BY DEPT_CD ASC
+    </select>
+    
+    
+    <!-- 전체 리스트 -->
+	<select id="allList" resultMap="departmentMap">
+        SELECT DEPT_CD, DEPT_NM 
+        FROM DEPARTMENT 
+        ORDER BY DEPT_CD ASC
+    </select>
+
+    <select id="getAllEmpList" resultMap="employeeDeptMap">
+        SELECT A.EMP_ID, A.EMP_NM, A.DEPT_CD, B.DEPT_NM
+        FROM EMPLOYEE A LEFT OUTER JOIN DEPARTMENT B ON (A.DEPT_CD = B.DEPT_CD)
+		WHERE A.EMP_STTS = 'Y'
+    </select>
+
+    <select id="getEmpDetail" parameterType="int" resultMap="employeeDeptMap">
+        SELECT A.EMP_ID, A.EMP_NM, A.DEPT_CD, B.DEPT_NM
+        FROM EMPLOYEE A LEFT OUTER JOIN DEPARTMENT B ON (A.DEPT_CD = B.DEPT_CD)
+        WHERE A.EMP_ID = #{empId}
+		AND A.EMP_STTS = 'Y'
+    </select>
+
+
+
+
+	 
+
+
+
+
+    <!-- [권한 구별용] -->
+	<!-- 팀장 -->
+    <select id="teamLeaders" resultMap="employeeMap">
+        SELECT EMP_ID, EMP_NM, EMP_JBGD, EMP_ROLE, DEPT_CD, 
+           	   EMP_EML, EMP_PHONE, EMP_PROFILE
+        FROM EMPLOYEE
+        WHERE DEPT_CD = #{deptCd}
+		  AND EMP_ROLE = '팀장'
+		  AND EMP_STTS = 'Y'
+    </select>
+
+    <!-- 대리 -->
+    <select id="seniorEmployee" resultType="employeeVO">
+        SELECT EMP_ID, EMP_NM, EMP_JBGD, EMP_ROLE, DEPT_CD, 
+           	   EMP_EML, EMP_PHONE, EMP_PROFILE
+        FROM EMPLOYEE
+        WHERE DEPT_CD = #{deptCd}
+		  AND EMP_JBGD = '대리'
+		  AND EMP_STTS = 'Y'
+    </select>
+
+    <!-- 주임 -->
+    <select id="associateEmployee" resultType="employeeVO">
+        SELECT EMP_ID, EMP_NM, EMP_JBGD, EMP_ROLE, DEPT_CD, 
+           	   EMP_EML, EMP_PHONE, EMP_PROFILE
+        FROM EMPLOYEE
+        WHERE DEPT_CD = #{deptCd}
+		  AND EMP_JBGD = '주임'
+		  AND EMP_STTS = 'Y'
+    </select>
+
+	<!-- 사원 -->
+    <select id="teamEmployee" resultType="employeeVO">
+        SELECT EMP_ID, EMP_NM, EMP_JBGD, EMP_ROLE, DEPT_CD, 
+           	   EMP_EML, EMP_PHONE, EMP_PROFILE
+        FROM EMPLOYEE
+        WHERE DEPT_CD = #{deptCd}
+		  AND EMP_ROLE = '사원'
+		  AND EMP_STTS = 'Y'
+    </select>
+<!-- 공유 JS트리 끝 -->
+
+
+	
+	<!--  조직도 페이지 -->
+	<select id="deptLeaders" resultType="employeeVO">
+	    SELECT 
+	        E.EMP_ID, E.EMP_NM, E.EMP_JBGD, E.EMP_ROLE, E.DEPT_CD, 
+	        E.EMP_EML, 
+	        REGEXP_REPLACE(E.EMP_PHONE, '([0-9]{3})([0-9]{3,4})([0-9]{4})', '\1-\2-\3') AS EMP_PHONE, 
+	        E.EMP_PROFILE,
+	        A.AVT_SAVE_NM
+	    FROM EMPLOYEE E
+	    LEFT OUTER JOIN EMP_AVT EA ON (E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y')
+	    LEFT OUTER JOIN AVATAR A ON (EA.AVT_NO = A.AVT_NO)
+	    WHERE E.DEPT_CD = #{deptCd}
+		  AND E.EMP_ROLE = '팀장'
+		  AND EMP_STTS = 'Y'
+	</select>
+	
+	<select id="deptEmployee" resultType="employeeVO">
+	    SELECT 
+	        E.EMP_ID, E.EMP_NM, E.EMP_JBGD, E.EMP_ROLE, E.DEPT_CD, 
+	        E.EMP_EML, 
+	        REGEXP_REPLACE(E.EMP_PHONE, '([0-9]{3})([0-9]{3,4})([0-9]{4})', '\1-\2-\3') AS EMP_PHONE, 
+	        E.EMP_PROFILE,
+	        A.AVT_SAVE_NM
+	    FROM EMPLOYEE E
+	    LEFT OUTER JOIN EMP_AVT EA ON (E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y')
+	    LEFT OUTER JOIN AVATAR A ON (EA.AVT_NO = A.AVT_NO)
+	    WHERE E.DEPT_CD = #{deptCd}
+		  AND E.EMP_ROLE = '사원'
+		  AND EMP_STTS = 'Y'
+	</select>
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+   
+	<!--  department resultMap  -->
+<resultMap id="departmentMap" type="departmentVO">
+	<id property="deptCd" column="DEPT_CD"/>
+	<result property="deptNm" column="DEPT_NM"/>
+	<collection property="teamLeaders" ofType="employeeVO" select="teamLeaders" column="DEPT_CD"/>
+	<collection property="deptLeaders" ofType="employeeVO" select="deptLeaders" column="DEPT_CD"/>
+	<collection property="deptEmployee" ofType="employeeVO" select="deptEmployee" column="DEPT_CD"/>
+</resultMap>
+
+
+<!--  employee resultMap  -->
+<resultMap id="employeeMap" type="employeeVO">
+	<id property="empId" column="EMP_ID"/>
+	<result property="empPw" column="EMP_PW"/>
+	<result property="empNm" column="EMP_NM"/>
+	<result property="empBir" column="EMP_BIR"/>
+	<result property="empPhone" column="EMP_PHONE"/>
+	<result property="empEml" column="EMP_EML"/>
+	<result property="empDomainEml" column="EMP_DOMAIN_EML"/>
+	<result property="empAdd1" column="EMP_ADD1"/>
+	<result property="empAdd2" column="EMP_ADD2"/>
+	<result property="empProfile" column="EMP_PROFILE"/>
+	<result property="empRegistDate" column="EMP_REGIST_DATE"/>
+	<result property="empSign" column="EMP_SIGN"/>
+	<result property="empLastCnt" column="EMP_LAST_CNT"/>
+	<result property="empMlg" column="EMP_MLG"/>
+	<result property="empStts" column="EMP_STTS"/>
+	<result property="empJbgd" column="EMP_JBGD"/>
+	<result property="empRole" column="EMP_ROLE"/>
+	<collection property="teamEmployee" ofType="employeeVO" select="teamEmployee" column="DEPT_CD"/>
+</resultMap>
+
+
+<!--  사원과 부서 정보를 한번에 매핑  -->
+<resultMap id="employeeDeptMap" type="kr.or.ddit.vo.EmployeeVO">
+	<id property="empId" column="EMP_ID"/>
+	<result property="deptCd" column="DEPT_CD"/>
+	<result property="empNm" column="EMP_NM"/>
+	<result property="empJbgd" column="EMP_JBGD" />
+	<association property="departmentVO" javaType="kr.or.ddit.vo.DepartmentVO">
+	<id property="deptCd" column="DEPT_CD"/>
+	<result property="deptNm" column="DEPT_NM"/>
+	</association>
+</resultMap>
+
+
+<resultMap id="calendarShareMap" type="calendarShareVO">
+	<id property="calShareNo" column="CAL_SHARE_NO"/>
+	<result property="calShareId" column="CAL_SHARE_ID"/>
+	<result property="calShareType" column="CAL_SHARE_TYPE"/>
+	<result property="deptCd" column="DEPT_CD"/>
+	<result property="calShareCd" column="CAL_SHARE_CD"/>
+	<result property="calShareDate" column="CAL_SHARE_DATE"/>
+	<result property="calShareNm" column="CAL_SHARE_NM"/>
+	<result property="calShareDeptNm" column="CAL_SHARE_DEPT_NM"/>
+</resultMap>
+    
+
+</mapper>

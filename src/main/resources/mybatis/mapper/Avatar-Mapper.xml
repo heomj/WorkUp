@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.avatarMapper">
+
+
+    <select id="getallavtlist" resultType="kr.or.ddit.vo.AvatarVO">
+        SELECT
+        AVT_NO, AVT_CTG, AVT_NM, AVT_SAVE_DT,
+        AVT_SAVE_NM, AVT_O_NM, AVT_DT, AVT_YN, AVT_PRICE,
+        (SELECT COUNT(*) FROM EMP_AVT E WHERE E.AVT_NO = A.AVT_NO) AS POPULARITY
+        FROM AVATAR A
+        <where>
+            <if test="cate != null and cate != '' and cate != 'all'">
+                AND AVT_CTG = #{cate}
+            </if>
+        </where>
+        <choose>
+            <when test="sortSelect == 'popular'">
+                ORDER BY POPULARITY DESC, AVT_DT DESC
+            </when>
+            <when test="sortSelect == 'price-high'">
+                ORDER BY AVT_PRICE ASC
+            </when>
+            <when test="sortSelect == 'price-low'">
+                ORDER BY AVT_PRICE DESC
+            </when>
+            <otherwise>
+                ORDER BY AVT_DT DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <update id="butavt" parameterType="kr.or.ddit.vo.EmpAvtVO">
+        MERGE INTO EMP_AVT A
+        USING DUAL
+        ON (A.EMP_ID = #{empId} AND A.AVT_NO = #{avtNo})
+
+        WHEN MATCHED THEN
+        UPDATE SET
+        OWN_AVT_YN = 'Y',
+        OWN_AVT_DT = SYSDATE
+        WHERE OWN_AVT_YN = 'N'
+
+        WHEN NOT MATCHED THEN
+        INSERT (EMP_ID, AVT_NO, OWN_AVT_WEAR_YN, OWN_AVT_YN, OWN_AVT_DT)
+        VALUES (#{empId}, #{avtNo}, 'N', 'Y', SYSDATE)
+    </update>
+
+    <!-- 아바타 보유주이니?-->
+    <select id="checkavt" parameterType="kr.or.ddit.vo.EmpAvtVO" resultType="kr.or.ddit.vo.EmpAvtVO">
+        SELECT *
+        FROM EMP_AVT
+        WHERE EMP_ID = #{empId}
+        AND AVT_NO = #{avtNo}
+        AND OWN_AVT_YN = 'Y'
+    </select>
+
+    <update id="updatemlg" parameterType="kr.or.ddit.vo.EmpAvtVO">
+        UPDATE EMPLOYEE
+        SET EMP_MLG = EMP_MLG - (SELECT AVT_PRICE FROM AVATAR WHERE AVT_NO = #{avtNo})
+        WHERE EMP_ID = #{empId}
+    </update>
+
+    <!-- 내가 보유한 아바타 List -->
+    <select id="myavtlist" parameterType="int" resultType="kr.or.ddit.vo.EmpAvtVO">
+        SELECT A.AVT_NO, A.OWN_AVT_WEAR_YN , A.OWN_AVT_DT,B.AVT_NM,B.AVT_SAVE_DT, A.OWN_AVT_YN, B.AVT_SAVE_NM, B.AVT_O_NM
+        FROM EMP_AVT A LEFT OUTER JOIN AVATAR B
+        ON A.AVT_NO = B.AVT_NO
+        WHERE A.EMP_ID = #{empId}
+        AND A.OWN_AVT_YN = 'Y'
+        ORDER BY OWN_AVT_WEAR_YN DESC, OWN_AVT_DT DESC
+    </select>
+
+
+    <!-- 아바타 삭제하기 -->
+    <update id="deleteavt" parameterType="kr.or.ddit.vo.EmpAvtVO">
+        UPDATE EMP_AVT SET OWN_AVT_YN = 'N'
+        WHERE EMP_ID = #{empId}
+        AND AVT_NO = #{avtNo}
+    </update>
+
+    <!-- 내가 착용중인 아바타 -->
+    <update id="wear" parameterType="int">
+        UPDATE EMP_AVT SET OWN_AVT_WEAR_YN = 'N'
+        WHERE EMP_ID = #{empId}
+    </update>
+
+    <update id="wearavt" parameterType="kr.or.ddit.vo.EmpAvtVO">
+        UPDATE EMP_AVT SET OWN_AVT_WEAR_YN = 'Y'
+        WHERE EMP_ID = #{empId}
+        AND AVT_NO = #{avtNo}
+    </update>
+
+    <!-- 아바타 수정 -->
+    <update id="update" parameterType="kr.or.ddit.vo.AvatarVO">
+        UPDATE AVATAR
+        <set>
+            AVT_NM = #{avtNm},
+            AVT_PRICE = #{avtPrice},
+            AVT_CTG = #{avtCtg},
+            AVT_YN = #{avtYn}
+            <if test="avtSaveNm != null and avtSaveNm != ''">
+                , AVT_SAVE_NM = #{avtSaveNm}
+                , AVT_O_NM = #{avtONm}
+            </if>
+        </set>
+        WHERE AVT_NO = #{avtNo}
+    </update>
+
+    <!-- 아바타 등록 -->
+    <insert id="insert" parameterType="kr.or.ddit.vo.AvatarVO">
+        <selectKey keyProperty="avtNo" resultType="int" order="BEFORE">
+            SELECT NVL(MAX(AVT_NO), 0) + 1 FROM AVATAR
+        </selectKey>
+
+        INSERT INTO AVATAR (AVT_NO,AVT_NM,AVT_CTG, AVT_PRICE,AVT_YN,AVT_SAVE_NM, AVT_DT)
+        VALUES (#{avtNo}, #{avtNm},#{avtCtg},#{avtPrice},#{avtYn},#{avtSaveNm}, SYSDATE)
+    </insert>
+
+    <!-- 아바타 삭제(수정) -->
+    <update id="delete" parameterType="kr.or.ddit.vo.AvatarVO">
+        UPDATE AVATAR
+        SET AVT_YN = #{avtYn}
+        WHERE AVT_NO = #{avtNo}
+    </update>
+
+
+</mapper>

@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.BoardMapper">
+
+    <sql id="where">
+	    <if test="bbsType != null and bbsType != ''">
+	        AND B.BBS_TYPE = #{bbsType}
+	    </if>
+	    
+	    <if test="keyword != null and keyword != ''">
+	        AND (
+	            B.BBS_NM  LIKE '%' || #{keyword} || '%' OR                     
+	            B.BBS_CN  LIKE '%' || #{keyword} || '%' OR                      
+	            E.EMP_NM  LIKE '%' || #{keyword} || '%' OR
+	            TO_CHAR(B.BBS_DT, 'YYYY-MM-DD HH24:MI') LIKE '%' || #{keyword} || '%' OR
+	            TO_CHAR(B.BBS_DT, 'YYYYMMDD') LIKE '%' || #{keyword} || '%'
+	        )
+	    </if>
+	</sql>
+
+    <resultMap id="boardMap" type="kr.or.ddit.vo.BoardVO">
+	    <id property="bbsNo" column="BBS_NO"/>
+	    <result property="deptCd" column="DEPT_CD"/>
+	    <result property="empId" column="EMP_ID"/>
+	    <result property="bbsNm" column="BBS_NM"/>
+	    <result property="bbsCn" column="BBS_CN" jdbcType="CLOB" javaType="java.lang.String"/>
+	    <result property="bbsCnt" column="BBS_CNT"/>
+	    <result property="bbsDt" column="BBS_DT"/>
+	    <result property="fileId" column="FILE_ID"/>
+	    <result property="bbsDelYn" column="BBS_DEL_YN"/>
+	    <result property="bbsType" column="BBS_TYPE"/>
+	    <result property="bbsLikeCnt" column="BBS_LIKE_CNT"/>
+	    <result property="bbsDislikeCnt" column="BBS_DISLIKE_CNT"/> 
+	    <result property="bbsRecomCnt" column="BBS_RECOM_CNT"/>
+	    <result property="bbsReportCnt" column="BBS_REPORT_CNT"/>
+	    <result property="prevNo" column="PREV_NO"/>
+	    <result property="prevTtl" column="PREV_TTL"/>
+	    <result property="nextNo" column="NEXT_NO"/>
+	    <result property="nextTtl" column="NEXT_TTL"/>
+	    <result property="fileCount" column="FILE_COUNT"/> 
+	    <result property="replyCount" column="REPLY_COUNT"/>
+	    <result property="fileNames" column="FILE_NAMES"/>
+	    
+	    <association property="employeeVO" javaType="kr.or.ddit.vo.EmployeeVO">
+	        <id property="empId" column="EMP_ID"/>
+	        <result property="empNm" column="EMP_NM"/>
+	        <result property="empJbgd" column="EMP_JBGD"/>
+	        <result property="empProfile" column="EMP_PROFILE"/>
+	    </association>
+	
+	    <association property="departmentVO" javaType="kr.or.ddit.vo.DepartmentVO">
+	        <id property="deptCd" column="DEPT_CD"/>
+	        <result property="deptNm" column="DEPT_NM"/>
+	    </association>
+	    
+	    <association property="fileTbVO" javaType="kr.or.ddit.vo.FileTbVO">
+	        <id property="fileId" column="FILE_ID"/>
+	        <collection property="fileDetailVOList" column="FILE_ID" select="selectFileListForBoard" />
+	    </association>
+	
+	    <collection property="commentVOList" ofType="kr.or.ddit.vo.CommentVO">
+	        <id property="cmntNo" column="CMNT_NO"/>
+	        <result property="cmntBbsNo" column="CMNT_BBS_NO"/>
+	        <result property="empId" column="EMP_ID"/> 
+	        <result property="empNm" column="EMP_NM"/> 
+	        <result property="cmntCn" column="CMNT_CN"/>
+	        <result property="cmntDt" column="CMNT_DT"/>
+	        <result property="cmntUpNo" column="CMNT_UP_NO"/> 
+	        <result property="empProfile" column="EMP_PROFILE"/>
+	        <result property="avtSaveNm" column="AVT_SAVE_NM"/>
+	    </collection>
+	</resultMap>
+	
+	<select id="selectFileListForBoard" resultType="kr.or.ddit.vo.FileDetailVO">
+	    SELECT FILE_DTL_ID, FILE_DTL_O_NM, FILE_DTL_SAVE_NM, FILE_DTL_PATH, FILE_DTL_EXT
+	    FROM FILE_DETAIL
+	    WHERE FILE_ID = #{fileId}
+	</select>
+
+    <insert id="insertBoard" parameterType="kr.or.ddit.vo.BoardVO">
+        <selectKey keyProperty="bbsNo" resultType="int" order="BEFORE">
+            SELECT BBS_BOARD_SEQ.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO BBS_BOARD (
+            BBS_NO, DEPT_CD, EMP_ID, BBS_NM, BBS_CN, 
+            BBS_TYPE, BBS_CNT, BBS_DT, FILE_ID, BBS_DEL_YN,
+            BBS_LIKE_CNT, BBS_DISLIKE_CNT, BBS_RECOM_CNT
+        ) VALUES (
+            #{bbsNo}, #{deptCd}, #{empId}, #{bbsNm}, #{bbsCn}, 
+            #{bbsType}, 0, SYSDATE, #{fileId, jdbcType=NUMERIC}, 'N',
+            0, 0, 0
+        )
+    </insert>
+
+    <select id="selectBoardDetail" parameterType="int" resultMap="boardMap"> 
+    	<![CDATA[
+	    SELECT 
+	        B.BBS_NO, B.BBS_NM, B.BBS_CN, B.BBS_DT, B.BBS_CNT, B.FILE_ID,
+	        B.EMP_ID, B.BBS_LIKE_CNT, B.BBS_DISLIKE_CNT, B.BBS_RECOM_CNT,
+	        B.BBS_TYPE,
+	        B.BBS_REPORT_CNT,
+	        E.EMP_NM, D.DEPT_NM, 
+	        NVL(AV.AVT_SAVE_NM, E.EMP_PROFILE) AS EMP_PROFILE,
+	        
+	        FD.FILE_DTL_ID, 
+	        FD.FILE_DTL_O_NM,
+	        FD.FILE_DTL_SAVE_NM, 
+	        FD.FILE_DTL_PATH, 
+	        FD.FILE_DTL_EXT,
+	
+	        (SELECT MAX(BBS_NO) FROM BBS_BOARD WHERE BBS_NO < #{bbsNo} AND BBS_DEL_YN = 'N') AS PREV_NO,
+	        (SELECT BBS_NM FROM BBS_BOARD WHERE BBS_NO = (SELECT MAX(BBS_NO) FROM BBS_BOARD WHERE BBS_NO < #{bbsNo} AND BBS_DEL_YN = 'N')) AS PREV_TTL,
+	        (SELECT MIN(BBS_NO) FROM BBS_BOARD WHERE BBS_NO > #{bbsNo} AND BBS_DEL_YN = 'N') AS NEXT_NO,
+	        (SELECT BBS_NM FROM BBS_BOARD WHERE BBS_NO = (SELECT MIN(BBS_NO) FROM BBS_BOARD WHERE BBS_NO > #{bbsNo} AND BBS_DEL_YN = 'N')) AS NEXT_TTL
+	    FROM BBS_BOARD B
+	    INNER JOIN EMPLOYEE E ON B.EMP_ID = E.EMP_ID
+	    INNER JOIN DEPARTMENT D ON B.DEPT_CD = D.DEPT_CD
+	    LEFT JOIN EMP_AVT EA ON E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y'
+	    LEFT JOIN AVATAR AV ON EA.AVT_NO = AV.AVT_NO
+	    LEFT JOIN FILE_DETAIL FD ON B.FILE_ID = FD.FILE_ID
+	    WHERE B.BBS_NO = #{bbsNo} AND B.BBS_DEL_YN = 'N'
+	    ]]>
+	</select>
+	
+	<select id="selectCommentList" parameterType="int" resultType="kr.or.ddit.vo.CommentVO">
+	    SELECT 
+	        C.CMNT_NO, C.CMNT_BBS_NO, C.EMP_ID, C.CMNT_CN, C.CMNT_DT, 
+	        C.CMNT_UP_NO, C.CMNT_DEL_YN, E.EMP_NM,
+	        NVL(AV.AVT_SAVE_NM, E.EMP_PROFILE) AS empProfile
+	    FROM BBS_COMMENT C 
+	    INNER JOIN EMPLOYEE E ON C.EMP_ID = E.EMP_ID 
+	    LEFT JOIN EMP_AVT EA ON E.EMP_ID = EA.EMP_ID AND EA.OWN_AVT_WEAR_YN = 'Y'
+	    LEFT JOIN AVATAR AV ON EA.AVT_NO = AV.AVT_NO
+	    WHERE C.CMNT_BBS_NO = #{bbsNo} AND C.CMNT_DEL_YN = 'N' 
+	    ORDER BY 
+	        NVL(NULLIF(C.CMNT_UP_NO, 0), C.CMNT_NO) DESC,
+	        C.CMNT_DT ASC
+	</select>
+	
+	<select id="selectFileList" parameterType="string" resultType="kr.or.ddit.vo.FileDetailVO">
+	    SELECT FILE_DTL_ID, FILE_DTL_O_NM, FILE_DTL_SAVE_NM, FILE_DTL_PATH, FILE_DTL_EXT
+	    FROM FILE_DETAIL
+	    WHERE FILE_ID = #{fileId}
+	</select>
+
+    <select id="selectBoardList" parameterType="map" resultMap="boardMap">
+	    <bind name="startRow" value="(currentPage - 1) * size + 1" />
+	    <bind name="endRow" value="currentPage * size" />
+	
+	    SELECT T.* FROM (
+	        SELECT 
+	            ROW_NUMBER() OVER(
+	                ORDER BY CASE WHEN B.BBS_TYPE = '부서공지' THEN 1 ELSE 2 END, B.BBS_NO DESC
+	            ) AS RNUM, 
+	            B.BBS_NO, B.DEPT_CD, B.EMP_ID, B.BBS_NM, B.BBS_TYPE, B.BBS_CNT, B.BBS_DT, 
+	            B.FILE_ID, B.BBS_REPORT_CNT,
+	            E.EMP_NM, 
+	            (SELECT COUNT(*) FROM FILE_DETAIL FD WHERE FD.FILE_ID = B.FILE_ID) AS FILE_COUNT,
+	            (SELECT COUNT(*) FROM BBS_COMMENT BC 
+	              WHERE BC.CMNT_BBS_NO = B.BBS_NO 
+	                AND BC.CMNT_DEL_YN = 'N') AS REPLY_COUNT
+	        FROM BBS_BOARD B
+	        INNER JOIN EMPLOYEE E ON B.EMP_ID = E.EMP_ID
+	        WHERE B.DEPT_CD = #{deptCd}
+	          AND B.BBS_DEL_YN = 'N'
+	        <include refid="where" /> 
+	    ) T
+	    WHERE T.RNUM BETWEEN #{startRow} AND #{endRow}
+	    ORDER BY T.RNUM ASC
+	</select>
+
+    <select id="selectBoardCount" parameterType="map" resultType="int">
+        SELECT COUNT(*)
+        FROM BBS_BOARD B
+        INNER JOIN EMPLOYEE E ON B.EMP_ID = E.EMP_ID
+        WHERE B.DEPT_CD = #{deptCd}
+          AND B.BBS_DEL_YN = 'N'
+        <include refid="where" />
+    </select>
+
+    <update id="updateBoard" parameterType="kr.or.ddit.vo.BoardVO">
+	    UPDATE BBS_BOARD
+	    SET BBS_NM = #{bbsNm},
+	        BBS_CN = #{bbsCn},
+	        BBS_TYPE = #{bbsType},
+	        FILE_ID = #{fileId, jdbcType=NUMERIC},
+	        BBS_REPORT_CNT = 0  
+	    WHERE BBS_NO = #{bbsNo}
+    </update>
+
+    <update id="deleteBoard" parameterType="int">
+        UPDATE BBS_BOARD
+        SET BBS_DEL_YN = 'Y'
+        WHERE BBS_NO = #{bbsNo}
+    </update>
+
+    <update id="incrementViewCount" parameterType="int">
+        UPDATE BBS_BOARD
+        SET BBS_CNT = BBS_CNT + 1 
+        WHERE BBS_NO = #{bbsNo}
+    </update>
+
+    <delete id="deleteFileDetail" parameterType="String">
+        DELETE FROM FILE_DETAIL WHERE FILE_DTL_ID = #{fileDtlId}
+    </delete>
+
+    <update id="migrateFiles" parameterType="map">
+        UPDATE FILE_DETAIL
+        SET FILE_ID = #{newFileId}
+        WHERE FILE_ID = #{oldFileId}
+    </update>
+
+    <select id="getBoardWriterId" parameterType="int" resultType="int">
+        SELECT EMP_ID FROM BBS_BOARD WHERE BBS_NO = #{bbsNo}
+    </select>
+
+    <update id="incrementLikeCount" parameterType="int">
+        UPDATE BBS_BOARD SET BBS_LIKE_CNT = NVL(BBS_LIKE_CNT, 0) + 1 WHERE BBS_NO = #{bbsNo}
+    </update>
+    <update id="decrementLikeCount" parameterType="int">
+        UPDATE BBS_BOARD SET BBS_LIKE_CNT = CASE WHEN BBS_LIKE_CNT > 0 THEN BBS_LIKE_CNT - 1 ELSE 0 END WHERE BBS_NO = #{bbsNo}
+    </update>
+    <update id="incrementDislikeCount" parameterType="int">
+        UPDATE BBS_BOARD SET BBS_DISLIKE_CNT = NVL(BBS_DISLIKE_CNT, 0) + 1 WHERE BBS_NO = #{bbsNo}
+    </update>
+    <update id="decrementDislikeCount" parameterType="int">
+        UPDATE BBS_BOARD SET BBS_DISLIKE_CNT = CASE WHEN BBS_DISLIKE_CNT > 0 THEN BBS_DISLIKE_CNT - 1 ELSE 0 END WHERE BBS_NO = #{bbsNo}
+    </update>
+    <update id="incrementRecomCount" parameterType="int">
+        UPDATE BBS_BOARD SET BBS_RECOM_CNT = NVL(BBS_RECOM_CNT, 0) + 1 WHERE BBS_NO = #{bbsNo}
+    </update>
+    <update id="decrementRecomCount" parameterType="int">
+        UPDATE BBS_BOARD SET BBS_RECOM_CNT = CASE WHEN BBS_RECOM_CNT > 0 THEN BBS_RECOM_CNT - 1 ELSE 0 END WHERE BBS_NO = #{bbsNo}
+    </update>
+
+    <select id="checkUserAction" parameterType="map" resultType="int">
+        SELECT COUNT(*) 
+        FROM BOARD_ACTIONS 
+        WHERE BBS_NO = #{bbsNo} AND EMP_ID = #{empId} AND ACTION_TYPE = #{actionType}
+    </select>
+
+    <insert id="insertUserAction" parameterType="map">
+        INSERT INTO BOARD_ACTIONS (BBS_NO, EMP_ID, ACTION_TYPE)
+        VALUES (#{bbsNo}, #{empId}, #{actionType})
+    </insert>
+
+    <delete id="deleteUserAction" parameterType="map">
+        DELETE FROM BOARD_ACTIONS 
+        WHERE BBS_NO = #{bbsNo} AND EMP_ID = #{empId} AND ACTION_TYPE = #{actionType}
+    </delete>
+
+    <select id="selectUserActionList" parameterType="map" resultType="string">
+	    SELECT ACTION_TYPE 
+	    FROM BOARD_ACTIONS 
+	    WHERE BBS_NO = #{bbsNo} AND EMP_ID = #{empId}
+	</select>
+
+</mapper>

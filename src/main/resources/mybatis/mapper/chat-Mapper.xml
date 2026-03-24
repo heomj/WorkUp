@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.ChatMapper">
+
+    <select id="selectAllEmployeeList" resultType="kr.or.ddit.vo.EmployeeVO">
+    SELECT 
+        E.EMP_ID, 
+        E.DEPT_CD,
+        E.EMP_NM, 
+        E.EMP_JBGD, 
+        D.DEPT_NM, 
+        E.EMP_PROFILE,
+        E.EMP_ROLE,
+        (SELECT COUNT(*) FROM CHAT C WHERE C.CHAT_RM_NO = #{chatRmNo} AND C.EMP_ID = E.EMP_ID) as isJoined
+    FROM EMPLOYEE E
+    LEFT OUTER JOIN DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+    ORDER BY 
+        D.DEPT_NM ASC, CASE 
+            WHEN E.EMP_JBGD = '부장' THEN 1
+            WHEN E.EMP_JBGD = '팀장' THEN 2
+            WHEN E.EMP_JBGD = '과장' THEN 3
+            WHEN E.EMP_JBGD = '대리' THEN 4
+            WHEN E.EMP_JBGD = '주임' THEN 5
+            WHEN E.EMP_JBGD = '사원' THEN 6
+            ELSE 7 
+        END ASC,      E.EMP_NM ASC  
+     </select>
+
+    <insert id="insertChatRoom" parameterType="kr.or.ddit.vo.ChatRoomVO">
+	    <selectKey keyProperty="chatRmNo" resultType="int" order="BEFORE">
+	        SELECT SEQ_CHAT_ROOM.NEXTVAL FROM DUAL
+	    </selectKey>
+	
+	    INSERT INTO CHAT_ROOM (
+	        CHAT_RM_NO, 
+	        CHAT_RM_TTL, 
+	        CHAT_RM_TYPE, 
+	        CHAT_RM_BGNG_DT, 
+	        CHAT_RM_YN
+	    ) VALUES (
+	        #{chatRmNo}, 
+	        #{chatRmTtl, jdbcType=VARCHAR}, 
+	        #{chatRmType, jdbcType=VARCHAR}, 
+	        SYSDATE,  'Y'       )
+	</insert>
+
+    <insert id="insertChatUser" parameterType="kr.or.ddit.vo.ChatUserVO">
+        INSERT INTO CHAT (
+            CHAT_RM_NO, EMP_ID, CHAT_USER_NM, CHAT_USER_AUTH, CHAT_USER_BGNG_DT
+        ) VALUES (
+            #{chatRmNo}, 
+            #{empId}, 
+            (SELECT EMP_NM FROM EMPLOYEE WHERE EMP_ID = #{empId}), 
+            #{chatUserAuth}, 
+            SYSDATE
+        )
+    </insert>
+
+    <select id="selectChatRoomList" parameterType="int" resultType="kr.or.ddit.vo.ChatRoomVO">
+	    SELECT 
+	        A.CHAT_RM_NO, 
+	        
+	        CASE 
+	            WHEN A.CHAT_RM_TYPE = '1' THEN 
+	                TRIM(BOTH ',' FROM TRIM(REPLACE(A.CHAT_RM_TTL, (SELECT EMP_NM FROM EMPLOYEE WHERE EMP_ID = #{empId}), '')))
+	            ELSE A.CHAT_RM_TTL 
+	        END AS CHAT_RM_TTL, 
+	        
+	        A.CHAT_RM_TYPE, 
+	        (SELECT 
+	            CASE 
+	                WHEN CHAT_TYPE = 'FILE' THEN TO_CLOB('첨부파일을 보냈습니다.')
+	                WHEN CHAT_TYPE = 'IMAGE' THEN TO_CLOB('사진을 보냈습니다.')
+	                ELSE CHAT_CN 
+	            END
+	         FROM (
+	            SELECT CHAT_CN, CHAT_TYPE 
+	            FROM CHAT_LOG 
+	            WHERE CHAT_RM_NO = A.CHAT_RM_NO 
+	              AND CHAT_DT >= B.CHAT_USER_BGNG_DT
+	            ORDER BY CHAT_DT DESC
+	         ) 
+	         WHERE ROWNUM = 1) AS CHAT_RM_LAST_MSG,
+	        A.CHAT_RM_BGNG_DT,
+	        A.CHAT_RM_YN, 
+	        (SELECT COUNT(*) FROM CHAT C WHERE C.CHAT_RM_NO = A.CHAT_RM_NO) AS userCount
+	    FROM CHAT_ROOM A
+	    INNER JOIN CHAT B ON A.CHAT_RM_NO = B.CHAT_RM_NO
+	    WHERE B.EMP_ID = #{empId}
+	      AND A.CHAT_RM_YN = 'Y'
+	    ORDER BY (
+	        SELECT MAX(CHAT_DT) 
+	        FROM CHAT_LOG 
+	        WHERE CHAT_RM_NO = A.CHAT_RM_NO 
+	          AND CHAT_DT >= B.CHAT_USER_BGNG_DT
+	    ) DESC NULLS LAST, A.CHAT_RM_BGNG_DT DESC
+	</select>
+
+    <select id="selectChatUserList" parameterType="int" resultType="kr.or.ddit.vo.ChatUserVO">
+	    SELECT 
+	        A.CHAT_RM_NO       AS chatRmNo, 
+	        A.EMP_ID           AS empId, 
+	        A.CHAT_USER_NM     AS chatUserNm,   A.CHAT_USER_AUTH   AS chatUserAuth, B.EMP_NM           AS empNm,        B.EMP_PROFILE      AS empProfile,   B.EMP_JBGD         AS empJbgd,      C.DEPT_NM          AS deptNm
+	    FROM CHAT A
+	    INNER JOIN EMPLOYEE B ON A.EMP_ID = B.EMP_ID
+	    LEFT OUTER JOIN DEPARTMENT C ON B.DEPT_CD = C.DEPT_CD 
+	    WHERE A.CHAT_RM_NO = #{chatRmNo}
+	</select>
+
+    <insert id="insertChatLog" parameterType="kr.or.ddit.vo.ChatLogVO">
+	    <selectKey keyProperty="chatLogNo" resultType="long" order="BEFORE">
+	        SELECT SEQ_CHAT_LOG.NEXTVAL FROM DUAL
+	    </selectKey>
+	    INSERT INTO CHAT_LOG (
+	        CHAT_LOG_NO, 
+	        CHAT_RM_NO, 
+	        EMP_ID, 
+	        CHAT_CN, 
+	        CHAT_DT,
+	        FILE_ID,
+	        CHAT_TYPE  ) VALUES (
+	        #{chatLogNo}, 
+	        #{chatRmNo}, 
+	        #{empId}, 
+	        #{chatCn, jdbcType=CLOB}, 
+	        SYSDATE,
+	        <choose>
+	            <when test="fileId != null and fileId > 0">#{fileId}</when>
+	            <otherwise>NULL</otherwise>
+	        </choose>,
+	        #{chatType, jdbcType=VARCHAR} )
+	</insert>
+
+    <select id="selectChatLogList" parameterType="map" resultType="kr.or.ddit.vo.ChatLogVO">
+	    SELECT 
+	        A.CHAT_LOG_NO, 
+	        A.CHAT_RM_NO, 
+	        A.EMP_ID, 
+	        A.CHAT_CN, 
+	        A.CHAT_DT,
+	        A.FILE_ID,
+	        A.CHAT_TYPE, 
+	        B.EMP_NM, 
+	        B.EMP_PROFILE,
+	        F.FILE_DTL_ID,          F.FILE_DTL_O_NM AS fileName 
+	    FROM CHAT_LOG A
+	    INNER JOIN EMPLOYEE B ON A.EMP_ID = B.EMP_ID
+	    INNER JOIN CHAT C ON A.CHAT_RM_NO = C.CHAT_RM_NO
+	    LEFT OUTER JOIN FILE_DETAIL F ON (A.FILE_ID = F.FILE_ID)
+	    WHERE A.CHAT_RM_NO = #{chatRmNo}
+	      AND C.EMP_ID = #{loginEmpId}
+	      AND A.CHAT_DT >= C.CHAT_USER_BGNG_DT
+	    ORDER BY A.CHAT_DT ASC
+	</select>
+    
+    <select id="selectChatRoomDetail" parameterType="int" resultType="kr.or.ddit.vo.ChatRoomVO">
+	    SELECT 
+	        CHAT_RM_NO, 
+	        CHAT_RM_TTL, 
+	        CHAT_RM_TYPE, 
+	        CHAT_RM_LAST_MSG, 
+	        CHAT_RM_BGNG_DT,
+	        CHAT_RM_YN,
+	        (SELECT EMP_ID FROM CHAT WHERE CHAT_RM_NO = #{chatRmNo} AND CHAT_USER_AUTH = '방장') as empId
+	    FROM CHAT_ROOM
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	</select>
+
+    <update id="updateLastMsg" parameterType="kr.or.ddit.vo.ChatRoomVO">
+        UPDATE CHAT_ROOM
+        SET CHAT_RM_LAST_MSG = #{chatRmLastMsg}
+        WHERE CHAT_RM_NO = #{chatRmNo}
+    </update>
+    
+    <update id="updateChatRoomTitle" parameterType="kr.or.ddit.vo.ChatRoomVO">
+	    UPDATE CHAT_ROOM  SET CHAT_RM_TTL = #{chatRmTtl}
+	     WHERE CHAT_RM_NO = #{chatRmNo}
+	</update>
+	
+	<delete id="deleteChatLogs" parameterType="int">
+	    DELETE FROM CHAT_LOG
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	</delete>
+	
+	<delete id="deleteChatParticipants" parameterType="int">
+	    DELETE FROM CHAT 
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	</delete>
+	
+	<delete id="deleteChatRoom" parameterType="int">
+	    DELETE FROM CHAT_ROOM
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	</delete>
+	
+	<delete id="leaveChatRoom">
+	    DELETE FROM CHAT
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	      AND EMP_ID = #{empId}
+	</delete>
+
+
+	<select id="getEmpNm" parameterType="int" resultType="string">
+	    SELECT EMP_NM 
+	    FROM EMPLOYEE 
+	    WHERE EMP_ID = #{empId}
+	</select>
+	
+	<!-- 중복 방지를 위한 새로운 조회 쿼리 -->
+	<select id="findRoomByTypeAndUser" resultType="kr.or.ddit.vo.ChatRoomVO">
+	    SELECT  A.CHAT_RM_NO,
+	            A.CHAT_RM_TTL,
+	            A.CHAT_RM_TYPE
+	    FROM    CHAT_ROOM A
+	    INNER JOIN CHAT B ON A.CHAT_RM_NO = B.CHAT_RM_NO
+	    WHERE   B.EMP_ID = #{empId}
+	      AND   A.CHAT_RM_TYPE = #{chatRmType}
+	      AND   A.CHAT_RM_YN = 'Y'
+	      AND   A.CHAT_RM_TTL = #{chatRmTtl}
+	</select>
+	
+	<!-- 인원수까지 체크하는 완벽한 1:1 전용 쿼리 -->
+	<select id="findExistingOneToOneRoom" resultType="kr.or.ddit.vo.ChatRoomVO">
+	    SELECT 
+	        A.CHAT_RM_NO,
+	        A.CHAT_RM_TTL,
+	        A.CHAT_RM_TYPE
+	    FROM CHAT_ROOM A
+	    INNER JOIN CHAT B ON A.CHAT_RM_NO = B.CHAT_RM_NO
+	    WHERE A.CHAT_RM_TYPE = '1'  AND A.CHAT_RM_YN = 'Y'
+	      AND B.CHAT_RM_NO IN (
+	          SELECT CHAT_RM_NO 
+	          FROM CHAT 
+	          WHERE EMP_ID IN (#{myId}, #{targetId})
+	          GROUP BY CHAT_RM_NO
+	          HAVING COUNT(EMP_ID) = 2 )
+	      AND (SELECT COUNT(*) FROM CHAT WHERE CHAT_RM_NO = A.CHAT_RM_NO) = 2 GROUP BY A.CHAT_RM_NO, A.CHAT_RM_TTL, A.CHAT_RM_TYPE
+	</select>
+	
+	<select id="selectChatUserCount" parameterType="int" resultType="int">
+	    SELECT COUNT(*) 
+	    FROM CHAT 
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	</select>
+	
+	<update id="updateChatRoomStatus" parameterType="kr.or.ddit.vo.ChatRoomVO">
+	    UPDATE CHAT_ROOM 
+	    SET CHAT_RM_YN = #{chatRmYn},
+	        CHAT_RM_END_DT = #{chatRmEndDt, jdbcType=TIMESTAMP}
+	    WHERE CHAT_RM_NO = #{chatRmNo}
+	</update>
+	
+	<select id="getFileNameByFileId" parameterType="long" resultType="string">
+	    SELECT FILE_DTL_O_NM 
+	    FROM FILE_DETAIL 
+	    WHERE FILE_ID = #{fileId} 
+	      AND ROWNUM = 1
+	</select>
+	
+    <!-- [프로젝트-구성원] -->
+    <select id="findRoomByTitle" resultType="kr.or.ddit.vo.ChatRoomVO">
+	    SELECT  A.CHAT_RM_NO,
+	            A.CHAT_RM_TTL,
+	            A.CHAT_RM_TYPE
+	    FROM    CHAT_ROOM A
+	    INNER JOIN CHAT B ON A.CHAT_RM_NO = B.CHAT_RM_NO
+	    WHERE   A.CHAT_RM_TTL = #{title}
+	      AND   B.EMP_ID = #{empId}
+	      AND   A.CHAT_RM_YN = 'Y'  
+    </select>
+	
+</mapper>

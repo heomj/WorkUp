@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.ItemMapper">
+
+    <resultMap type="kr.or.ddit.vo.FileTbVO" id="fileTbMap">
+        <result property="fileId" column="FILE_ID"/>
+        <result property="empId" column="EMP_ID"/>
+        <result property="fileDate" column="FILE_DT"/>
+        <result property="fileDelYn" column="FILE_DEL_YN"/>
+        <result property="fileStts" column="FILE_STTS"/>
+        <collection property="fileDetailVOList" resultMap="fileDetailMap"></collection>
+    </resultMap>
+
+    <resultMap type="kr.or.ddit.vo.FileDetailVO" id="fileDetailMap">
+        <result property="fileDtlId" column="FILE_DTL_ID"/>
+        <result property="fileId" column="FILE_ID"/>
+        <result property="fileDtlPath" column="FILE_DTL_PATH"/>
+        <result property="fileDtlSaveNm" column="FILE_DTL_SAVE_NM"/>
+        <result property="fileDtlONm" column="FILE_DTL_O_NM"/>
+        <result property="fileDtlExt" column="FILE_DTL_EXT"/>
+        <result property="fileDtlDt" column="FILE_DTL_DT"/>
+        <result property="empId" column="EMP_ID"/>
+        <result property="fileDtlDelYn" column="FILE_DTL_DEL_YN"/>
+    </resultMap>
+
+    <!-- FILE_GROUP 테이블에 insert(1회 실행)
+   //실행전 fileGroupVO{fileGroupNo=0,fileRegdate=null)
+   //실행후 fileGroupVO{fileGroupNo=2025022600004,fileRegdate=null) 왜냐하면 selectKey에 의해서..
+   public int insertFileGroup(FileGroupVO fileGroupVO) -->
+    <insert id="insertFileGroup" parameterType="kr.or.ddit.vo.FileTbVO">
+        <selectKey resultType="long" order="BEFORE" keyProperty="fileId">
+            SELECT NVL(SUBSTR(MAX(FILE_ID),1,8)
+            || TRIM(TO_CHAR(SUBSTR(MAX(FILE_ID),-3,3)+1,'000')),
+            TO_CHAR(SYSDATE,'YYYYMMDD"001"')) AS RSLT
+            FROM   FILE_TB
+            WHERE  SUBSTR(FILE_ID,1,8) = TO_CHAR(SYSDATE,'YYYYMMDD')
+        </selectKey>
+
+        INSERT INTO FILE_TB(FILE_ID
+        ,EMP_ID
+        ,FILE_STTS)
+        VALUES(#{fileId},#{empId},#{fileStts})
+    </insert>
+
+    <!-- FILE_DETAIL 테이블에 insert
+    FILE_DETAIL 테이블에 insert
+    public int insertFileDetail(FileDetailVO fileDetailVO)-->
+    <insert id="insertFileDetail" parameterType="kr.or.ddit.vo.FileDetailVO">
+        <!--
+        FILE_DETAIL 테이블의 마지막 FILE_SN 값 + 1을 구하기
+        단, FILE_SN는 주어진 FILE_GROUP_NO의 값을 조건으로 하기
+        단, FILE_SN 값이 NULL이면 NULL처리하기
+        파일을 업로드 했고, 오늘 첫번째 그룹으로써 업로드 함
+        상세 테이블에는 3개의 파일이 있더라
+        SELECT NVL(MAX(FILE_SN),0) + 1
+        FROM   FILE_DETAIL
+        WHERE  FILE_GROUP_NO = '20250619001';
+         -->
+        <selectKey resultType="long" order="BEFORE" keyProperty="fileDtlId">
+            SELECT SEQ_FILE_DTL_ID.NEXTVAL FROM DUAL
+        </selectKey>
+
+        INSERT INTO FILE_DETAIL(FILE_DTL_ID
+        ,FILE_ID
+        ,FILE_DTL_PATH
+        ,FILE_DTL_SAVE_NM
+        ,FILE_DTL_O_NM
+        ,FILE_DTL_EXT
+        ,EMP_ID)
+        VALUES(#{fileDtlId},#{fileId},#{fileDtlPath},#{fileDtlSaveNm},#{fileDtlONm}
+        ,#{fileDtlExt},#{empId})
+    </insert>
+    
+    <select id="getFileDetail" parameterType="long" resultType="kr.or.ddit.vo.FileDetailVO">
+        SELECT 
+            FILE_DTL_ID,
+            FILE_ID,
+            FILE_DTL_PATH,
+            FILE_DTL_SAVE_NM,
+            FILE_DTL_O_NM,
+            FILE_DTL_EXT,
+            FILE_DTL_DT,
+            EMP_ID,
+            FILE_DTL_DEL_YN
+        FROM FILE_DETAIL
+        WHERE FILE_DTL_ID = #{fileDtlId}
+    </select>
+    
+    <select id="getFileDetailByGroupId" parameterType="long" resultType="kr.or.ddit.vo.FileDetailVO">
+        SELECT 
+            FILE_DTL_ID,
+            FILE_ID,
+            FILE_DTL_PATH,
+            FILE_DTL_SAVE_NM,
+            FILE_DTL_O_NM,
+            FILE_DTL_EXT,
+            FILE_DTL_DT,
+            EMP_ID,
+            FILE_DTL_DEL_YN
+        FROM FILE_DETAIL
+        WHERE FILE_ID = #{fileId}
+          AND ROWNUM = 1
+    </select>
+</mapper>
+
+
+
+
+
+
+
+
+
+
+
+

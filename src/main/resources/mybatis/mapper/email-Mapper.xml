@@ -1,0 +1,704 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.EmailMapper">
+    <resultMap id="fileDetailMap" type="kr.or.ddit.vo.FileDetailVO">
+        <id property="fileDtlId" column="FILE_DTL_ID" />
+        <result property="fileId" column="FILE_ID" />
+        <result property="fileDtlPath" column="FILE_DTL_PATH" />
+        <result property="fileDtlSaveNm" column="FILE_DTL_SAVE_NM" />
+        <result property="fileDtlONm" column="FILE_DTL_O_NM" />
+        <result property="fileDtlExt" column="FILE_DTL_EXT" />
+        <result property="fileDtlDt" column="FILE_DTL_DT" />
+        <result property="empId" column="EMP_ID" />
+        <result property="fileDtlDelYn" column="FILE_DTL_DEL_YN" />
+    </resultMap>
+
+    <resultMap id="fileMap" type="kr.or.ddit.vo.FileTbVO">
+        <id property="fileId" column="FILE_ID" />
+        <result property="empId" column="EMP_ID" />
+        <result property="fileDate" column="FILE_DT" />
+        <result property="fileDelYn" column="FILE_DEL_YN" />
+        <result property="fileStts" column="FILE_STTS" />
+
+        <collection property="fileDetailVOList" resultMap="fileDetailMap" />
+    </resultMap>
+
+
+    <!-- 메일 상세 -->
+    <select id="findByNo" parameterType="int" resultType="kr.or.ddit.vo.EmailVO">
+        SELECT A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , B.EML_RCVR_ID
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , B.EML_IMPT_YN            -- <!-- 받은메일함에서는 '중요여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCPTN_YN           -- <!-- 받은메일함에서는 '수신여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVNG_DT         --   <!-- 받은메일함에서는 '수신시각' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_DEL_YN            -- <!-- 받은메일함에서는 '삭제여부' 수신자 테이블의 정보를 가져옴-->
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , C.EMP_PROFILE
+        FROM EMAIL A
+        LEFT OUTER JOIN EMAIL_RECEIVER B
+        ON A.EML_NO=B.EML_NO
+        LEFT OUTER JOIN EMPLOYEE C ON A.EML_SNDR_ID=C.EMP_ID WHERE  B.EML_RCVR_ID=#{emlRcvrId}
+    </select>
+
+    <select id="findByNoSend" parameterType="int" resultType="kr.or.ddit.vo.EmailVO">
+        SELECT A.EML_NO
+             , A.EML_FILE_GROUP_NO
+             , A.EML_RCVR_ID
+             , A.EML_SNDR_ID
+             , A.EML_TTL
+             , A.EML_CN
+             , A.EML_SNDNG_DT
+             , A.EML_RCVNG_DT
+             , A.EML_EMRG_YN
+             , A.EML_RCPTN_YN
+             , A.EML_SNDR_DEL_YN
+             , A.EML_OTSD_YN
+             , A.EML_OTSD_RCVR_ADDR
+             , A.EML_OTSD_SNDR_ADDR
+             , A.EML_STTS
+             , A.FILE_ID
+             , B.EMP_NM
+        FROM EMAIL A
+                 LEFT OUTER JOIN (SELECT G.EML_NO
+                                       , LISTAGG(G.EMP_NM || '(' || G.DEPT_NM || ')', ',') EMP_NM
+                                  FROM (SELECT A.EML_RCVR_ID
+                                             , A.EML_NO
+                                             , A.EMP_ID
+                                             , B.EMP_NM
+                                             , C.DEPT_NM
+                                             , A.EML_RCVR_TYPE
+                                        FROM TEAM1_202509F.EMAIL_RECEIVER A
+                                                 LEFT OUTER JOIN EMPLOYEE B
+                                                                 ON
+                                                                     A.EMP_ID = B.EMP_ID
+                                                 LEFT OUTER JOIN DEPARTMENT C
+                                                                 ON
+                                                                     B.DEPT_CD = C.DEPT_CD
+                                        WHERE A.EML_RCVR_TYPE = '수신자'
+                                          AND A.EML_NO = #{emlNo}) G
+                                  GROUP BY G.EML_NO) B ON
+            A.EML_NO = B.EML_NO
+                 LEFT OUTER JOIN (SELECT G.EML_NO
+                                       , LISTAGG(G.EMP_NM || '(' || G.DEPT_NM || ')', ',') EMP_NM
+                                  FROM (SELECT A.EML_RCVR_ID
+                                             , A.EML_NO
+                                             , A.EMP_ID
+                                             , B.EMP_NM
+                                             , C.DEPT_NM
+                                             , A.EML_RCVR_TYPE
+                                        FROM TEAM1_202509F.EMAIL_RECEIVER A
+                                                 LEFT OUTER JOIN EMPLOYEE B
+                                                                 ON
+                                                                     A.EMP_ID = B.EMP_ID
+                                                 LEFT OUTER JOIN DEPARTMENT C
+                                                                 ON
+                                                                     B.DEPT_CD = C.DEPT_CD
+                                        WHERE A.EML_RCVR_TYPE = '참조자'
+                                          AND A.EML_NO = #{emlNo}) G
+                                  GROUP BY G.EML_NO) C
+                                 ON A.EML_NO = C.EML_NO
+
+        WHERE A.EML_NO = #{emlNo}
+    </select>
+
+    <select id="getFileTbVO" parameterType="long" resultMap="fileMap">
+        SELECT
+            A.FILE_ID, A.EMP_ID, A.FILE_DT, A.FILE_DEL_YN, A.FILE_STTS,
+            B.FILE_DTL_ID, B.FILE_DTL_PATH, B.FILE_DTL_SAVE_NM, B.FILE_DTL_O_NM,
+            B.FILE_DTL_EXT, B.FILE_DTL_DT, B.FILE_DTL_DEL_YN
+        FROM FILE_TB A
+                 LEFT OUTER JOIN FILE_DETAIL B ON A.FILE_ID = B.FILE_ID
+        WHERE A.FILE_ID = #{fileId}
+    </select>
+
+    <!-- 메일 보내기 (INSERT) -->
+    <insert id="sendMail" parameterType="EmailVO">
+    <selectKey resultType="int" order="BEFORE" keyProperty="emlNo">
+    select SEQ_EML_NO.NEXTVAL FROM DUAL
+    </selectKey>
+    INSERT INTO EMAIL(EML_NO,  EML_SNDR_ID
+        , EML_TTL
+        , EML_CN
+        , EML_SNDNG_DT
+        , EML_EMRG_YN
+        , FILE_ID
+        , EML_OTSD_SNDR_ADDR
+        , EML_OTSD_RCVR_ADDR
+        , EML_OTSD_YN
+    ) values (#{emlNo}
+        , #{emlSndrId}
+        , #{emlTtl}
+        , #{emlCn}
+        , SYSDATE
+        , #{emlEmrgYn}
+        , #{fileId}
+        , #{emlOtsdSndrAddr}
+        , #{emlOtsdRcvrAddr}
+        , #{emlOtsdYn})
+
+    </insert>
+
+    <!-- 답장시 기존 파일 복사 -->
+    <insert id="copyFileDetail" parameterType="HashMap">
+        INSERT INTO FILE_DETAIL ( FILE_DTL_ID
+                                , FILE_ID
+                                , FILE_DTL_PATH
+                                , FILE_DTL_SAVE_NM
+                                , FILE_DTL_O_NM
+                                , FILE_DTL_EXT
+                                , FILE_DTL_DT
+                                , EMP_ID
+                                , FILE_DTL_DEL_YN)
+        SELECT SEQ_FILE_DTL_ID.NEXTVAL
+             , #{newFileId}
+             , FILE_DTL_PATH
+             , FILE_DTL_SAVE_NM
+             , FILE_DTL_O_NM
+             , FILE_DTL_EXT
+             , SYSDATE
+             , #{empId}
+             , 'N'
+        FROM FILE_DETAIL
+        WHERE FILE_DTL_ID = #{oldFileDtlId}
+    </insert>
+
+
+    <!--수신자 테이블 추가-->
+    <insert id="sendMailRCVR" parameterType="EmailReceiverVO">
+        <selectKey resultType="int" order="BEFORE" keyProperty="emlRcvrId">
+            select SEQ_EML_RECEIVER_NO.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO TEAM1_202509F.EMAIL_RECEIVER
+        (EML_RCVR_ID, EML_NO, EMP_ID, EML_RCVR_TYPE)
+        VALUES(#{emlRcvrId}, #{emlNo}, #{empId}, #{emlRcvrType})
+    </insert>
+
+    <!-- 메일 불러오기 -->
+    <sql id="where">
+        <if test="mode!=null and mode!=''"><!-- mode가 있다면 -->
+            <if test="mode=='emlTtl'">
+                AND EML_TTL 	 LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='emlCn'">
+                AND EML_CN LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='emlSndrId'">
+                AND AL.EML_SNDR_ID 	 LIKE '%' || #{keyword} || '%'
+                OR AL.EMP_NM 	 LIKE '%' || #{keyword} || '%'
+            </if>
+        </if>
+        <if test="mode==null or mode==''"><!-- mode가 없다면 -->
+            AND (
+            EML_TTL	 LIKE '%' || #{keyword} || '%' OR
+            EML_CN LIKE '%' || #{keyword} || '%' OR
+            EML_SNDR_ID  LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+    </sql>
+
+    <sql id="filter">
+        <if test="pageFilter!=null and pageFilter!=''"><!-- pageFilter 있다면 -->
+            <if test="pageFilter=='isNotRead'">
+                AND B.EML_RCPTN_YN = 'N'
+            </if>
+            <if test="pageFilter=='isImpt'">
+                AND B.EML_IMPT_YN = 'Y'
+            </if>
+            <if test="pageFilter=='isFile'">
+                AND A.FILE_ID != 0
+            </if>
+            <if test="pageFilter=='isEmrg'">
+                AND  A.EML_EMRG_YN = 'Y'
+            </if>
+            <if test="pageFilter=='mailBox'">
+                AND  B.EML_BOX_NO = #{emlBoxNo}
+            </if>
+        </if>
+    </sql>
+    <!-- 리스트 수 카운트 (검색 시 검색 반영) -->
+    <select id="getTotalCount" parameterType="int" resultType="int">
+        SELECT COUNT(*)
+        FROM
+        (SELECT
+        ROW_NUMBER() OVER (ORDER BY AL.EML_NO DESC) RNUM
+        , AL.* FROM
+        (SELECT
+        A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , B.EML_RCVR_ID
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , B.EML_IMPT_YN            -- <!-- 받은메일함에서는 '중요여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCPTN_YN           -- <!-- 받은메일함에서는 '수신여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVNG_DT         --   <!-- 받은메일함에서는 '수신시각' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_DEL_YN            -- <!-- 받은메일함에서는 '삭제여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVR_TYPE            -- <!-- 받은메일함에서는 '타입(참조/수신)' 수신자 테이블의 정보를 가져옴-->
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMAIL_RECEIVER B
+        ON A.EML_NO=B.EML_NO
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE B.EMP_ID=#{empId}
+        AND B.EML_DEL_YN='N'
+        AND A.EML_SNDR_DEL_YN='N'
+        <include refid="filter"></include>
+        ) AL
+        where 1=1
+        <include refid="where"></include>
+        ) T
+    </select>
+    <!--리스트 받아오기-->
+    <select id="getList" parameterType="hashMap" resultType="kr.or.ddit.vo.EmailVO">
+        SELECT T.*
+        FROM
+        (SELECT
+        ROW_NUMBER() OVER (ORDER BY AL.EML_NO DESC) RNUM
+        , AL.* FROM
+        (SELECT
+        A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , B.EML_RCVR_ID
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , B.EML_IMPT_YN            -- <!-- 받은메일함에서는 '중요여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCPTN_YN           -- <!-- 받은메일함에서는 '수신여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVNG_DT         --   <!-- 받은메일함에서는 '수신시각' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_DEL_YN            -- <!-- 받은메일함에서는 '삭제여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVR_TYPE            -- <!-- 받은메일함에서는 '타입(참조/수신)' 수신자 테이블의 정보를 가져옴-->
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMAIL_RECEIVER B
+        ON A.EML_NO=B.EML_NO
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE B.EMP_ID=#{empId}
+        AND B.EML_DEL_YN='N'
+        AND A.EML_SNDR_DEL_YN='N'
+        <include refid="filter"></include>
+        ) AL
+        where 1=1
+        <include refid="where"></include>
+        ) T
+        WHERE RNUM BETWEEN (#{currentPage} * #{pageNum}) - ( #{pageNum} - 1) AND (#{currentPage} *  #{pageNum})
+    </select>
+
+    <!--보낸메일함 리스트 수 카운트 (검색 시 검색 반영) -->
+    <select id="getTotalSendCount" parameterType="int" resultType="int">
+        SELECT COUNT(*)
+        FROM   (
+        SELECT ROW_NUMBER() OVER (ORDER BY A.EML_NO DESC) RNUM
+        , A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE A.EML_SNDR_ID=#{empId}
+        <include refid="filter"></include>
+        <include refid="where"></include>
+        )
+    </select>
+    <!--보낸메일함 리스트 받아오기-->
+    <select id="getSendList" parameterType="hashMap" resultType="kr.or.ddit.vo.EmailVO">
+        SELECT T.*
+        FROM
+        (
+        SELECT ROW_NUMBER() OVER (ORDER BY A.EML_NO DESC) RNUM
+        , A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE A.EML_SNDR_ID=#{empId}
+        <include refid="filter"></include>
+        <include refid="where"></include>
+        ) T
+        WHERE RNUM BETWEEN (#{currentPage} * #{pageNum}) - ( #{pageNum} - 1) AND (#{currentPage} *  #{pageNum})
+    </select>
+    <!--보낸메일함 리스트에서 수신확인을 위한 수신자 리스트 받아오기-->
+    <select id="getemailReceiverVOListByemlNo" resultType="kr.or.ddit.vo.EmailReceiverVO" parameterType="int">
+        SELECT A.*
+             , C.EMP_NM
+             , C.EMP_JBGD
+             , C.EMP_PROFILE
+             , D.DEPT_NM
+        FROM EMAIL_RECEIVER A
+                 LEFT JOIN EMPLOYEE C
+                           ON A.EMP_ID=C.EMP_ID
+                 LEFT JOIN DEPARTMENT D
+                           ON C.DEPT_CD = D.DEPT_CD
+        WHERE EML_NO=#{emlNo}
+        AND A.EML_RCVR_TYPE !='참조자' --참조자는 안가져와도 됨
+    </select>
+
+<!-- 참조자 포함 버젼 -->
+    <select id="getAllemailReceiverVOListByemlNo" resultType="kr.or.ddit.vo.EmailReceiverVO" parameterType="int">
+        SELECT A.*
+             , C.EMP_NM
+             , C.EMP_JBGD
+             , C.EMP_PROFILE
+             , D.DEPT_NM
+        FROM EMAIL_RECEIVER A
+                 LEFT JOIN EMPLOYEE C
+                           ON A.EMP_ID=C.EMP_ID
+                 LEFT JOIN DEPARTMENT D
+                           ON C.DEPT_CD = D.DEPT_CD
+        WHERE EML_NO=#{emlNo}
+    </select>
+
+
+    <!-- 휴지통 수 카운트(검색 시 검색 반영)-->
+    <select id="getTotalTrashCount" parameterType="int" resultType="int">
+        SELECT COUNT(*)
+        FROM
+        (SELECT
+        ROW_NUMBER() OVER (ORDER BY AL.EML_NO DESC) RNUM
+        , AL.* FROM
+        (SELECT
+        A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , B.EML_RCVR_ID
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , B.EML_IMPT_YN            -- <!-- 받은메일함에서는 '중요여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCPTN_YN           -- <!-- 받은메일함에서는 '수신여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVNG_DT         --   <!-- 받은메일함에서는 '수신시각' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_DEL_YN            -- <!-- 받은메일함에서는 '삭제여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVR_TYPE            -- <!-- 받은메일함에서는 '타입(참조/수신)' 수신자 테이블의 정보를 가져옴-->
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMAIL_RECEIVER B
+        ON A.EML_NO=B.EML_NO
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE B.EMP_ID=#{empId}
+        AND B.EML_DEL_YN='Y'
+        AND (B.EML_DEL_PMNT_YN='N') --휴지통에만 있는 (영구삭제 N의 경우)
+        AND A.EML_SNDR_DEL_YN='N'
+        <include refid="filter"></include>
+        ) AL
+        where 1=1
+        <include refid="where"></include>
+        ) T
+    </select>
+
+    <!--휴지통 리스트 받아오기-->
+    <select id="getTrashList" parameterType="hashMap" resultType="kr.or.ddit.vo.EmailVO">
+        SELECT T.*
+        FROM
+        (SELECT
+        ROW_NUMBER() OVER (ORDER BY AL.EML_NO DESC) RNUM
+        , AL.* FROM
+        (SELECT
+        A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , B.EML_RCVR_ID
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , B.EML_IMPT_YN            -- <!-- 받은메일함에서는 '중요여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCPTN_YN           -- <!-- 받은메일함에서는 '수신여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVNG_DT         --   <!-- 받은메일함에서는 '수신시각' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_DEL_YN            -- <!-- 받은메일함에서는 '삭제여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVR_TYPE            -- <!-- 받은메일함에서는 '타입(참조/수신)' 수신자 테이블의 정보를 가져옴-->
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMAIL_RECEIVER B
+        ON A.EML_NO=B.EML_NO
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE B.EMP_ID=#{empId}
+        AND B.EML_DEL_YN='Y'
+        AND (B.EML_DEL_PMNT_YN='N') --휴지통에만 있는 (영구삭제 N의 경우)
+        AND A.EML_SNDR_DEL_YN='N'
+        <include refid="filter"></include>
+        ) AL
+        where 1=1
+        <include refid="where"></include>
+        ) T
+        WHERE RNUM BETWEEN (#{currentPage} * #{pageNum}) - ( #{pageNum} - 1) AND (#{currentPage} *  #{pageNum})
+
+    </select>
+
+
+    <!-- 관리자용 모든 리스트 카운트-->
+    <select id="getAdminListAllTotalCount" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM   (
+        SELECT ROW_NUMBER() OVER (ORDER BY A.EML_NO DESC) RNUM
+        , A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        AND (A.EML_SNDR_DEL_YN='N')
+        <include refid="filter"></include>
+        <include refid="where"></include>
+        )
+    </select>
+
+    <!--관리자용 모든 리스트-->
+    <select id="getAdminListAllList" parameterType="hashMap" resultType="kr.or.ddit.vo.EmailVO">
+        SELECT T.*
+        FROM (
+        SELECT ROW_NUMBER() OVER (ORDER BY A.EML_NO DESC) RNUM
+        , A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , A.EML_SNDR_ID
+        , A.EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT
+        , A.EML_EMRG_YN
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        AND (A.EML_SNDR_DEL_YN='N')
+        <include refid="filter"></include>
+        <include refid="where"></include>
+        ) T
+    </select>
+    <!-- WHERE RNUM BETWEEN (#{currentPage} * #{pageNum}) - ( #{pageNum} - 1) AND (#{currentPage} *  #{pageNum})-->
+
+
+    <!--  헤더 (메일 알람용)
+   public int getTotal(Map<String, Object> map) -->
+    <select id="getNotReadMail" parameterType="int" resultType="EmailVO">
+        SELECT EML_RCVR_ID
+        , EML_TTL
+        , EML_EMRG_YN
+        , DEPT_NM
+        , EMP_NM
+        , EML_SNDNG_DT
+        , COUNT(*) OVER() AS cnt
+        FROM   (SELECT ROW_NUMBER() OVER (ORDER BY A.EML_NO DESC) RNUM
+        , A.EML_NO
+        , A.EML_FILE_GROUP_NO
+        , B.EML_RCVR_ID      AS EML_RCVR_ID
+        , A.EML_SNDR_ID
+        , A.EML_TTL         AS EML_TTL
+        , A.EML_CN
+        , A.EML_SNDNG_DT AS EML_SNDNG_DT
+        , A.EML_EMRG_YN     AS EML_EMRG_YN
+        , B.EML_IMPT_YN            -- <!-- 받은메일함에서는 '중요여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCPTN_YN           -- <!-- 받은메일함에서는 '수신여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVNG_DT         --   <!-- 받은메일함에서는 '수신시각' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_DEL_YN            -- <!-- 받은메일함에서는 '삭제여부' 수신자 테이블의 정보를 가져옴-->
+        , B.EML_RCVR_TYPE            -- <!-- 받은메일함에서는 '타입(참조/수신)' 수신자 테이블의 정보를 가져옴-->
+        , A.EML_SNDR_DEL_YN
+        , A.EML_OTSD_RCVR_ADDR
+        , A.EML_OTSD_SNDR_ADDR
+        , A.EML_STTS
+        , A.FILE_ID
+        , C.EMP_NM          AS EMP_NM
+        , C.EMP_JBGD
+        , D.DEPT_NM         AS DEPT_NM
+        FROM EMAIL A
+        LEFT OUTER JOIN EMAIL_RECEIVER B
+        ON A.EML_NO=B.EML_NO
+        LEFT OUTER JOIN EMPLOYEE C
+        ON A.EML_SNDR_ID=C.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D
+        ON C.DEPT_CD = D.DEPT_CD
+        WHERE B.EMP_ID=#{empId}
+        AND (B.EML_DEL_YN='N')
+        AND B.EML_RCPTN_YN ='N'
+        AND B.EML_RCVR_TYPE !='참조자' --참조는 알람 안띄워도 됨
+        AND A.EML_SNDR_DEL_YN='N'
+        ) order by EML_SNDNG_DT desc
+    </select>
+
+
+
+    <!--읽음처리 : 수신자 테이블 -->
+    <update id="isRead" parameterType="int">
+        update EMAIL_RECEIVER set EML_RCVNG_DT=sysdate, EML_RCPTN_YN='Y' where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+
+    <!--중요처리 : 수신자 테이블 -->
+    <update id="isImpt" parameterType="int">
+        update EMAIL_RECEIVER set EML_IMPT_YN='Y' where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+    <!--중요처리는 토글이라서 N로 바꾸는 것도 있어야 함 -->
+    <update id="isNotImpt" parameterType="int">
+        update EMAIL_RECEIVER set EML_IMPT_YN='N' where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+
+    <!--삭제처리 : 수신자 테이블 -->
+    <update id="isDeleted" parameterType="int">
+        update EMAIL_RECEIVER set EML_DEL_YN='Y' where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+
+    <!--영구삭제 : 수신자 테이블 -->
+    <update id="deletePermanent" parameterType="int">
+        update EMAIL_RECEIVER set EML_DEL_PMNT_YN='Y' where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+    <!--삭제복귀 : 수신자 테이블 -->
+    <update id="retrieve" parameterType="int">
+        update EMAIL_RECEIVER set EML_DEL_YN='N' where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+
+    <!--회수처리 -->
+    <update id="reCallEmail" parameterType="int">
+        update EMAIL set EML_SNDR_DEL_YN='Y' where EML_NO=#{emlNo}
+    </update>
+
+    <!--메일 이동 ->메일박스처리 -->
+    <update id="updateMailbox" parameterType="Map">
+        update EMAIL_RECEIVER set EML_BOX_NO=#{emlBoxNo} where EML_RCVR_ID=#{emlRcvrId}
+    </update>
+
+    <!--메일박스 가져오기-->
+    <select id="getemailBoxVOList" resultType="EmailBoxVO">
+        SELECT
+             EML_BOX_NO
+             ,EML_BOX_UP_NO
+             ,EMP_ID
+             ,EML_BOX_TTL
+             ,LEVEL as "level" FROM EMAIL_BOX
+        WHERE EMP_ID = #{empId}
+            START WITH EML_BOX_UP_NO IS NULL OR EML_BOX_UP_NO = 0
+        CONNECT BY PRIOR EML_BOX_NO = EML_BOX_UP_NO
+        ORDER SIBLINGS BY EML_BOX_NO DESC
+    </select>
+
+    <!--메일박스 이름변경-->
+    <update id="updateBox">
+        UPDATE EMAIL_BOX
+        SET EML_BOX_TTL = #{emlBoxTtl}
+        WHERE EML_BOX_NO = #{emlBoxNo}
+    </update>
+    <!--메일박스 추가-->
+    <insert id="insertBox">
+        INSERT INTO EMAIL_BOX (EML_BOX_NO, EML_BOX_TTL, EML_BOX_UP_NO, EMP_ID)
+        VALUES (SEQ_EML_BOX.NEXTVAL, #{emlBoxTtl}, #{emlBoxUpNo}, #{empId})
+    </insert>
+    <!--메일박스 삭제-->
+    <delete id="deleteBox">
+        delete
+        from email_box
+        where EML_BOX_NO=#{emlBoxNo}
+    </delete>
+
+    <select id="checkMailExist" resultType="java.lang.Integer">
+        select count(*)
+        from EMAIL_RECEIVER
+        where EML_BOX_NO=#{emlBoxNo} and EMP_ID=#{empId}
+        and EML_DEL_YN='N'
+    </select>
+</mapper>

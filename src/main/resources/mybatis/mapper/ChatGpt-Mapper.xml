@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- ChatGpt Mapper.xml -->
+<mapper namespace="kr.or.ddit.chatbot.web.ChatGptMapper">
+
+    <resultMap id="taskMap" type="kr.or.ddit.vo.project.TaskVO">
+        <result property="taskTtl" column="TASK_TTL"/>
+        <result property="taskStts" column="TASK_STTS"/>
+        <result property="taskPrgrt" column="TASK_PRGRT"/>
+        <result property="taskEndDt" column="TASK_END_DT"/>
+    </resultMap>
+
+    <resultMap id="projectMap" type="kr.or.ddit.vo.project.ProjectVO">
+        <id property="projNo" column="PROJ_NO"/> <result property="projTtl" column="PROJ_TTL"/>
+        <result property="projDtl" column="PROJ_DTL"/>
+        <result property="projEndDt" column="PROJ_END_DT"/>
+        <result property="projStts" column="PROJ_STTS"/>
+        <result property="projPrgrt" column="projPrgrt"/>
+        <collection property="taskVOList" resultMap="taskMap"/>
+    </resultMap>
+
+    <!--내 프로잭트 List-->
+    <select id="project" parameterType="int" resultMap="projectMap">
+        SELECT
+        A.PROJ_NO,
+        A.PROJ_TTL,
+        A.PROJ_DTL,
+        A.PROJ_END_DT,
+        A.PROJ_STTS,
+        T.TASK_TTL,
+        T.TASK_STTS,
+        T.TASK_PRGRT,
+        T.TASK_END_DT,
+        (SELECT NVL(ROUND(AVG(TASK_PRGRT)), 0)
+        FROM TASK T2
+            WHERE T2.PROJ_NO = A.PROJ_NO) AS projPrgrt
+        FROM PROJECT A
+            INNER JOIN PROJECT_PARTICIPANT B ON A.PROJ_NO = B.PROJ_NO
+            LEFT OUTER JOIN TASK T ON T.PROJ_NO = A.PROJ_NO
+        WHERE B.EMP_ID = #{empId}
+        ORDER BY A.PROJ_NO, T.TASK_END_DT ASC
+    </select>
+
+</mapper>

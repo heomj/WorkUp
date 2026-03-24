@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.project.KanbanprojectMapper">
+
+    <resultMap id="TaskResultMap" type="taskVO">
+        <id property="taskNo" column="TASK_NO"/>
+        <result property="taskTtl" column="TASK_TTL"/>
+        <result property="taskCn" column="TASK_CN"/>
+        <result property="taskStts" column="TASK_STTS"/>
+        <result property="taskPrgrt" column="TASK_PRGRT"/>
+        <result property="taskImpt" column="TASK_IMPT"/>
+        <result property="taskBgngDt" column="TASK_BGNG_DT"/>
+        <result property="taskEndDt" column="TASK_END_DT"/>
+
+        <collection property="taskParticipantVOList" ofType="taskParticipantVO">
+            <id property="prtpntNo" column="PRTPNT_NO"/>
+            <result property="empId" column="EMP_ID"/>
+            <result property="prtpntColor" column="PRTPNT_COLOR"/> <result property="empNm" column="EMP_NM"/>
+        </collection>
+    </resultMap>
+
+    <!-- 일감 리스트 불러오기 중요도 ->우선순위-> 최신순 정렬-->
+    <select id="getTasklist" resultMap="TaskResultMap">
+        SELECT
+            T.TASK_NO
+             , T.TASK_TTL
+             , T.TASK_CN
+             , T.TASK_STTS
+             , T.TASK_PRGRT
+             , T.TASK_IMPT
+             , T.TASK_BGNG_DT
+             , T.TASK_END_DT
+             , P.PRTPNT_NO
+             , P.EMP_ID
+             , P.PRTPNT_COLOR
+             , E.EMP_NM
+        FROM TASK T
+                 LEFT JOIN TASK_PARTICIPANT P ON T.TASK_NO = P.TASK_NO
+                 LEFT JOIN EMPLOYEE E ON P.EMP_ID = E.EMP_ID
+        WHERE T.PROJ_NO = #{projNo}
+        ORDER BY
+            CASE T.TASK_IMPT
+                WHEN '높음' THEN 1
+                WHEN '보통' THEN 2
+                WHEN '낮음' THEN 3
+                ELSE 4
+                END ASC,
+            T.TASK_NO DESC
+    </select>
+
+
+    <!-- 일감 상태 업데이트(진행률까지)/마지막 수정자도 함께 수정 -->
+    <update id="updateTaskStts" parameterType="taskVO">
+        UPDATE TASK
+        <set>
+            <if test="taskStts != null">
+                TASK_STTS = #{taskStts},
+            </if>
+            <if test="taskPrgrt != null">
+                TASK_PRGRT = #{taskPrgrt},
+            </if>
+
+            TASK_MDFCN_DT = SYSDATE,
+
+            <if test="empId != null and empId != ''">
+                EMP_ID = #{empId},
+            </if>
+            <if test="taskNm != null and taskNm != ''">
+                TASK_NM = #{taskNm},
+            </if>
+
+            <if test="taskStts == '진행'">
+                TASK_ACTL_BGNG_DT = NVL(TASK_ACTL_BGNG_DT, SYSDATE),
+            </if>
+        </set>
+        WHERE TASK_NO = #{taskNo}
+    </update>
+
+
+    <!-- 새일감 insert -->
+    <insert id="insertTask" parameterType="taskVO">
+        <selectKey resultType="int" keyProperty="taskNo" order="BEFORE">
+            SELECT SEQ_TASK_NO.NEXTVAL FROM DUAL
+        </selectKey>
+
+        INSERT INTO TASK
+        (TASK_NO
+        , PROJ_NO
+        , TASK_UP_NO
+        , EMP_ID
+        , TASK_NM
+        , TASK_TTL
+        , TASK_CN
+        , TASK_STTS
+        , TASK_PRGRT
+        , TASK_IMPT
+        , TASK_CRT_DT
+        , TASK_MDFCN_DT
+        , TASK_ACTL_BGNG_DT
+        , TASK_BGNG_DT
+        , TASK_END_DT)
+        VALUES(#{taskNo}
+          , #{projNo}
+          , 0
+          , #{empId}
+          , #{taskNm}
+          , #{taskTtl}
+          , #{taskCn}
+          , '대기'
+          , 0
+          , #{taskImpt}
+          , SYSDATE
+          , SYSDATE
+          , ''
+          , #{taskBgngDt}
+          , #{taskEndDt})
+    </insert>
+
+
+    <!-- 일감 담당자 insert-->
+    <insert id="insertTaskParticipant">
+        INSERT INTO TASK_PARTICIPANT (
+            PRTPNT_NO
+          , TASK_NO
+          , EMP_ID
+        ) VALUES (
+            SEQ_TASK_PRTPNT_NO.NEXTVAL
+            , #{taskNo}
+            , #{empId}
+          )
+    </insert>
+
+    <!-- 프로젝트 참여자 검색하기 -->
+    <select id="findMembersByQuery" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT
+            EMP_ID,
+            PRTPNT_NM AS EMP_NM  FROM PROJECT_PARTICIPANT
+        WHERE PROJ_NO = #{projNo}
+          AND (
+            EMP_ID LIKE '%'||#{query}||'%'
+                OR PRTPNT_NM LIKE '%'||#{query}||'%'
+            )
+    </select>
+
+    <!-- 프로젝트 이름 가져오는거 .. -->
+    <select id="getProject" parameterType="int" resultType="projectVO">
+        SELECT PROJ_NO, PROJ_TTL
+        FROM PROJECT
+        WHERE PROJ_NO = #{projNo}
+    </select>
+
+    <!-- 프로젝트의 상태 바꾸기(지연 -> 진행/진행 -> 지연) -->
+    <update id="updateProjectStatus">
+        UPDATE PROJECT
+        SET PROJ_STTS = #{projStts}
+        WHERE PROJ_NO = #{projNo}
+    </update>
+
+    <!-- 지금 지연이 몇개인지 -->
+    <select id="countDelayedTasks" resultType="int">
+        SELECT COUNT(*)
+        FROM TASK
+        WHERE PROJ_NO = #{projNo}
+          AND TASK_STTS = '지연'
+    </select>
+
+
+    <!-- 일감 수정하기(팀장만) -->
+    <update id="updateTask" parameterType="taskVO">
+        UPDATE TASK
+        SET
+            TASK_TTL = #{taskTtl},
+            TASK_CN = #{taskCn},
+            TASK_IMPT = #{taskImpt},
+            TASK_BGNG_DT = #{taskBgngDt},
+            TASK_END_DT = #{taskEndDt},
+            TASK_MDFCN_DT = SYSDATE  WHERE TASK_NO = #{taskNo}
+    </update>
+
+    <delete id="deleteTaskParticipant" parameterType="int">
+        DELETE FROM TASK_PARTICIPANT
+        WHERE TASK_NO = #{taskNo}
+    </delete>
+
+
+
+
+
+
+
+
+</mapper>

@@ -1,0 +1,1219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="kr.or.ddit.mapper.ApprovalMapper">
+
+    <!-- 코드 재사용 -->
+    <sql id="where">
+        <if test="mode!=null and mode!=''"><!-- mode가 있다면 -->
+            <if test="mode=='aprvTtl'">
+                AND    APRV_TTL    LIKE '%' || #{keyword} || '%'
+                AND EMP_ID = #{empId}
+            </if>
+            <if test="mode=='empId'">
+                AND    EMP_ID LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='aprvNo'">
+                AND    APRV_NO LIKE '%' || #{keyword} || '%'
+            </if>
+        </if>
+        <if test="mode==null or mode==''"><!-- mode가 없다면 -->
+            AND  (
+            APRV_TTL    LIKE '%' || #{keyword} || '%' OR
+            EMP_ID      LIKE '%' || #{keyword} || '%' OR
+            APRV_NO     LIKE '%' || #{keyword} || '%'
+            )
+            AND EMP_ID = #{empId}
+        </if>
+    </sql>
+
+
+
+
+    <!-- 코드 재사용 -->
+    <sql id="where_stts">
+        <if test="stts!=null and stts!=''"><!-- stts가 있다면 -->
+            <if test="stts=='Ing'">
+                AND (APRV_STTS = '진행중' OR APRV_STTS = '반려')
+                AND EMP_ID = #{empId}
+            </if>
+            <if test="stts=='return'">
+                AND (APRV_STTS = '반려')
+                AND EMP_ID = #{empId}
+            </if>
+            <if test="stts=='recall'">
+                AND (APRV_STTS = '회수')
+                AND EMP_ID = #{empId}
+            </if>
+            <if test="stts=='pending'">
+                AND (APRV_STTS = '진행중')
+            </if>
+
+            <if test="stts=='done'">
+                AND (APRV_STTS = '결재완료')
+            </if>
+
+        </if>
+    </sql>
+
+
+
+
+
+    <!-- (사용자)문서 목록
+    -->
+    <select id="list" parameterType="hashMap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT T.*
+        FROM
+        (
+        SELECT ROW_NUMBER() OVER(ORDER BY APRV_DT DESC) RNUM
+             , APRV_NO
+             , EMP_ID
+             , APRV_SE
+             , APRV_DOC_NO
+             , APRV_TTL
+             , APRV_DT
+             , APRV_END_DT
+             , APRV_EMRG_YN
+             , APRV_RLS_YN
+             , APRV_STP
+             , APRV_STTS
+             , APRV_DEL_YN
+             , APRV_DATA
+             , APRV_DEPT_CD
+             , APRV_WORK_TAG
+        FROM   APPROVAL
+        WHERE  1 = 1
+        AND APRV_STTS != '회수'
+        <include refid="where_stts"></include>
+        <include refid="where"></include>
+        ) T
+        WHERE RNUM BETWEEN (#{currentPage} * 10) - (10 - 1) AND (#{currentPage} * 10)
+        ORDER BY APRV_DT DESC
+    </select>
+
+
+
+
+
+
+
+
+    <!-- (사용자)전체 행의 수(검색 시 검색 반영)
+   public int getTotal(Map<String, Object> map) -->
+    <select id="getTotal" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM   APPROVAL
+        WHERE  1 = 1
+        AND APRV_STTS != '회수'
+        <include refid="where_stts"></include>
+        <include refid="where"></include>
+    </select>
+
+
+
+
+
+
+
+
+
+    <!-- (관리자용)전체 결재 문서의 전체 행의 수(검색 시 검색 반영)
+   public int getTotalAll(Map<String, Object> map) -->
+    <select id="getTotalAll" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM   APPROVAL A
+        LEFT OUTER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D ON A.APRV_DEPT_CD = D.DEPT_CD
+        WHERE  1 = 1
+
+        <if test="deptFilter != null and deptFilter != ''">
+            AND A.APRV_DEPT_CD = #{deptFilter}
+        </if>
+
+        <if test="statusFilter != null and statusFilter != ''">
+            AND A.APRV_STTS LIKE '%' || #{statusFilter} || '%'
+        </if>
+
+        <if test="keyword != null and keyword != ''">
+            <choose>
+                <when test="mode.equals('aprvTtl')">
+                    AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+                </when>
+                <when test="mode.equals('empId')">
+                    AND A.EMP_ID LIKE '%' || #{keyword} || '%'
+                </when>
+                <when test="mode.equals('docWriterNm')">
+                    AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+                </when>
+                <otherwise>
+                    AND (
+                    A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+                    A.EMP_ID   LIKE '%' || #{keyword} || '%' OR
+                    E.EMP_NM   LIKE '%' || #{keyword} || '%' OR
+                    A.APRV_DEPT_CD LIKE '%' || #{keyword} || '%'
+                    )
+                </otherwise>
+            </choose>
+        </if>
+    </select>
+
+
+    <!-- (관리자용) 전체 문서 목록 조회 -->
+    <select id="allList" parameterType="hashMap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT T.*
+        FROM (
+        SELECT ROW_NUMBER() OVER(ORDER BY A.APRV_DT DESC) AS RNUM
+        , A.APRV_NO, A.EMP_ID, E.EMP_NM AS docWriterNm
+        , A.APRV_DEPT_CD, D.DEPT_NM AS docWriterDeptNm
+        , A.APRV_TTL, A.APRV_DT, A.APRV_END_DT, A.APRV_STTS, A.APRV_DATA
+        FROM   APPROVAL A
+        LEFT OUTER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D ON A.APRV_DEPT_CD = D.DEPT_CD
+        WHERE  1 = 1
+
+        <if test="deptFilter != null and deptFilter != ''">
+            AND A.APRV_DEPT_CD = #{deptFilter}
+        </if>
+        <if test="statusFilter != null and statusFilter != ''">
+            AND A.APRV_STTS LIKE '%' || #{statusFilter} || '%'
+        </if>
+
+        <if test="keyword != null and keyword != ''">
+            <choose>
+                <when test="mode.equals('aprvTtl')">
+                    AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+                </when>
+                <when test="mode.equals('empId')">
+                    AND A.EMP_ID LIKE '%' || #{keyword} || '%'
+                </when>
+                <when test="mode.equals('docWriterNm')">
+                    AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+                </when>
+                <otherwise> AND (
+                    A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+                    E.EMP_NM   LIKE '%' || #{keyword} || '%' OR
+                    A.EMP_ID   LIKE '%' || #{keyword} || '%'
+                    )
+                </otherwise>
+            </choose>
+        </if>
+        ) T
+        WHERE T.RNUM BETWEEN (#{currentPage} * 10) - 9 AND (#{currentPage} * 10)
+        ORDER BY T.RNUM ASC
+    </select>
+
+    <!-- (관리자용-예산 관리용) 결재된 예산 문서(업무태그 예산만) 목록 조회 -->
+    <select id="searchBudgetAprvList" parameterType="hashMap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT A.APRV_NO,
+        A.EMP_ID,
+        E.EMP_NM AS docWriterNm,
+        A.APRV_DEPT_CD,
+        D.DEPT_NM AS docWriterDeptNm,
+        A.APRV_TTL,
+        A.APRV_DT,
+        A.APRV_END_DT,
+        A.APRV_STTS
+        FROM   APPROVAL A
+        LEFT OUTER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        LEFT OUTER JOIN DEPARTMENT D ON A.APRV_DEPT_CD = D.DEPT_CD
+        WHERE  A.APRV_STTS = '결재완료' AND APRV_WORK_TAG = 'C03'
+
+        <if test="keyword != null and keyword != ''">
+            AND (
+            A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+            E.EMP_NM   LIKE '%' || #{keyword} || '%' OR
+            A.APRV_NO  LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+        ORDER BY A.APRV_DT DESC
+    </select>
+
+    <!--결재 대기 개수 (검색 조건 반영!) -->
+    <select id="getPendingTotal" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM   APPROVAL A
+            JOIN APRV_LINE L ON A.APRV_NO = L.APRV_NO
+            JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        WHERE  A.APRV_STTS = '진행중'
+            AND  A.APRV_DEL_YN = 'N'
+            AND  L.APRV_LN_STTS = 'APRV02001'
+            AND  L.EMP_ID = #{empId}
+            AND  L.APRV_LN_LVL = (
+                SELECT MIN(INNER_L.APRV_LN_LVL)
+                FROM   APRV_LINE INNER_L
+                WHERE  INNER_L.APRV_NO = A.APRV_NO
+                AND  INNER_L.APRV_LN_STTS = 'APRV02001'
+            )
+
+        <if test="mode!=null and mode!=''">
+            <if test="mode=='aprvTtl'">
+                AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empId'">
+                AND A.EMP_ID LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empNm'">
+                AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+            </if>
+        </if>
+        <if test="mode==null or mode==''">
+            AND (
+            A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+            A.EMP_ID   LIKE '%' || #{keyword} || '%' OR
+            E.EMP_NM   LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+    </select>
+
+
+    <!--결재대기 문서목록 -->
+    <select id="pendingList" parameterType="hashMap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT T.*
+        FROM
+            (
+            SELECT
+                ROW_NUMBER() OVER(ORDER BY A.APRV_NO ASC) RNUM
+                 , A.APRV_NO
+                 , A.EMP_ID AS DOC_WRITER_ID
+                 , E.EMP_NM AS DOC_WRITER_NM
+                 , E.EMP_JBGD AS POS_NM
+                 , FN_GET_DEPT_NM(E.DEPT_CD) AS DOC_WRITER_DEPT_NM
+                 , A.APRV_SE
+                 , A.APRV_DOC_NO
+                 , A.APRV_TTL
+                 , A.APRV_DT
+                 , A.APRV_END_DT
+                 , A.APRV_EMRG_YN
+                 , A.APRV_RLS_YN
+                 , A.APRV_STP
+                 , A.APRV_STTS
+                 , A.APRV_DEL_YN
+                 , A.APRV_DATA
+                 , A.APRV_LN_CNT
+                 , L.APRV_LN_NO
+                 , L.APRV_LN_LVL
+                 , L.EMP_ID AS APRV_ID
+                 , L.APRV_LN_STTS
+                 , L.APRV_LN_DT
+                 , L.APRV_LN_CN
+            FROM
+                APPROVAL A
+                    JOIN
+                APRV_LINE L ON A.APRV_NO = L.APRV_NO
+                    JOIN
+                EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+            WHERE
+                A.APRV_STTS = '진행중'
+             AND A.APRV_DEL_YN = 'N'
+             AND L.APRV_LN_STTS = 'APRV02001'
+             AND L.EMP_ID = #{empId}
+             AND L.APRV_LN_LVL = (
+                    SELECT MIN(INNER_L.APRV_LN_LVL)
+                    FROM   APRV_LINE INNER_L
+                    WHERE  INNER_L.APRV_NO = A.APRV_NO
+                      AND  INNER_L.APRV_LN_STTS = 'APRV02001'
+                )
+            <if test="mode!=null and mode!=''">
+                <if test="mode=='aprvTtl'">
+                    AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+                </if>
+                <if test="mode=='empId'">
+                    AND A.EMP_ID LIKE '%' || #{keyword} || '%'
+                </if>
+                <if test="mode=='empNm'">
+                    AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+                </if>
+            </if>
+            <if test="mode==null or mode==''">
+                AND (
+                A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+                A.EMP_ID   LIKE '%' || #{keyword} || '%' OR
+                E.EMP_NM   LIKE '%' || #{keyword} || '%'
+                )
+            </if>
+
+            ) T
+        WHERE RNUM BETWEEN (#{currentPage} * 10) - (10 - 1) AND (#{currentPage} * 10)
+        ORDER BY APRV_DT ASC
+    </select>
+
+
+    <!--결재선 가져오기 -->
+    <select id="getAprvLine" parameterType="int" resultType="kr.or.ddit.vo.AprvLineVO">
+        SELECT A.APRV_LN_NO
+             , A.APRV_NO
+             , A.APRV_LN_LVL
+             , A.EMP_ID AS APRV_ID
+             , A.APRV_LN_STTS
+             , A.APRV_LN_DT
+             , A.APRV_LN_CN
+             , B.EMP_JBGD
+             , FN_GET_DEPT_NM(B.DEPT_CD) AS DEPT_NM
+             , B.EMP_NM AS APRV_NM
+             , B.EMP_SIGN
+             , B.EMP_PROFILE
+        FROM
+            APRV_LINE A
+                INNER JOIN
+            EMPLOYEE B ON A.EMP_ID = B.EMP_ID
+        WHERE
+            A.APRV_NO = #{aprvNo}
+        ORDER BY
+            A.APRV_LN_LVL ASC -- 결재 순서 정렬
+    </select>
+
+
+
+    <!--무슨 양식인지 알아보기 -->
+    <select id="getAprvSe" parameterType="int" resultType="String">
+        SELECT APRV_SE
+        FROM APPROVAL
+        WHERE APRV_NO = #{aprvNo}
+    </select>
+
+
+
+    <!--///// 문서 번호로 결재 본문 가져오기 시작 ///// -->
+    <!-- 코드조각 활용 -->
+    <sql id="baseColumns">
+        A.APRV_NO
+        , A.EMP_ID AS DOC_WRITER_ID
+    , A.APRV_SE
+    , A.APRV_DOC_NO
+    , A.APRV_TTL
+    , A.APRV_DT
+    , A.APRV_END_DT
+    , A.APRV_EMRG_YN
+    , A.APRV_RLS_YN
+    , A.APRV_STP
+    , A.APRV_STTS
+    , A.APRV_DEL_YN
+    , A.APRV_DATA
+    , A.APRV_LN_CNT
+    , A.APRV_WORK_TAG
+    , FN_GET_PROJ_NM(A.APRV_WORK_TAG) AS APRV_WORK_TAG_NM
+    , E.EMP_NM AS DOC_WRITER_NM
+    , E.EMP_JBGD AS POS_NM
+    , E.EMP_SIGN AS DOC_WRITER_EMP_SIGN
+    , E.EMP_PROFILE AS DOC_WRITER_EMP_PROFILE
+    , D.DEPT_NM AS DOC_WRITER_DEPT_NM
+    </sql>
+
+    <resultMap id="expndDocMap" type="approvalVO" autoMapping="true">
+        <id property="aprvNo" column="APRV_NO" />
+
+        <collection property="expndDocList" ofType="expndDocVO">
+            <result property="bgtCd" column="BGT_CD"/>
+            <result property="bgtMCd" column="BGT_M_CD"/>
+            <result property="expndAmt" column="EXPND_AMT"/>
+            <result property="expndRsn" column="EXPND_RSN"/>
+            <result property="bgtItmNm" column="BGT_ITM_NM"/>
+        </collection>
+    </resultMap>
+
+    <select id="getPendingDoc_APRV01001" parameterType="int" resultMap="expndDocMap">
+        SELECT
+        <include refid="baseColumns" />
+        , B.EXPND_DOC_NO
+        , C.BGT_CD
+        , C.BGT_M_CD
+        , C.EXPND_AMT
+        , C.EXPND_RSN
+        , BD.BGT_ITM_NM
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD  INNER JOIN APRV_EXPND_DOC B ON A.APRV_DOC_NO = B.EXPND_DOC_NO
+        LEFT JOIN APRV_EXPND_DTL C ON B.EXPND_DOC_NO = C.EXPND_DOC_NO
+        LEFT JOIN BUDGET_DETAIL BD ON C.BGT_CD = BD.BGT_CD AND C.BGT_M_CD = BD.BGT_M_CD
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <select id="getPendingDoc_APRV01002" parameterType="int" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT <include refid="baseColumns" />,
+                 B.VCT_DOC_CD
+               , B.VCT_DOC_BGNG
+               , B.VCT_DOC_END
+               , B.VCT_DOC_RSN
+               , B.VCT_TOTAL_DAYS
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        INNER JOIN APRV_VCT_DOC B ON A.APRV_DOC_NO = B.ATT_TYPE_ID
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <select id="getPendingDoc_APRV01003" parameterType="int" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT <include refid="baseColumns" />,
+                 B.ATT_TYPE_ID
+               , B.BZTRP_PLC
+               , B.BZTRP_START
+               , B.BZTRP_END
+               , B.BZTRP_RSN
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        INNER JOIN APRV_BZTRP_DOC B ON A.APRV_DOC_NO = B.ATT_TYPE_ID
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <select id="getPendingDoc_APRV01004" parameterType="int" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT <include refid="baseColumns" />,
+                 B.EXCS_WORK_DOC_BGNG
+               , B.EXCS_WORK_DOC_END
+               , B.EXCS_WORK_DOC_RES
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        INNER JOIN APRV_EXCS_WORK_DOC B ON A.APRV_DOC_NO = B.ATT_TYPE_ID
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <select id="getPendingDoc_APRV01005" parameterType="int" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT <include refid="baseColumns" />,
+                 B.RPT_DOC_NO
+               , B.RPT_SE
+               , B.RPT_CN
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        INNER JOIN APRV_RPT_DOC B ON A.APRV_DOC_NO = B.RPT_DOC_NO
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <select id="getPendingDoc_APRV01006" parameterType="int" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT <include refid="baseColumns" />,
+                 B.NML_DOC_NO
+               , B.NML_CN
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        INNER JOIN APRV_NOMAL_DOC B ON A.APRV_DOC_NO = B.NML_DOC_NO
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <select id="getPendingDoc_APRV01007" parameterType="int" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT <include refid="baseColumns" />,
+                 B.RSGNTN_DOC_NO
+               , B.RSGNTN_DT
+               , B.RSGNTN_RSN
+        FROM APPROVAL A
+        INNER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        INNER JOIN DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+        INNER JOIN APRV_RSGNTN_DOC B ON A.APRV_DOC_NO = B.RSGNTN_DOC_NO
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+    <!--  ///// 결재 본문 가져오기 끝 /////-->
+
+
+
+
+    <!-- 승인/반려 시 결재선 업데이트 -->
+    <update id="aprvLineUpdate" parameterType="kr.or.ddit.vo.AprvLineVO">
+        UPDATE APRV_LINE
+        SET    APRV_LN_STTS = #{aprvLnStts},
+               APRV_LN_CN = #{aprvLnCn},
+               APRV_LN_DT = SYSDATE
+        WHERE  APRV_NO = #{aprvNo}
+          AND  EMP_ID = #{empId}
+    </update>
+
+    <!-- 승인, 반려 시 결재문서 업데이트 -->
+    <update id="updateAprvStatus" parameterType="kr.or.ddit.vo.AprvLineVO">
+        UPDATE APPROVAL
+        SET
+        <choose>
+            <when test="aprvLnStts == 'APRV02003'">
+                APRV_STTS = '반려'
+            </when>
+
+            <when test="aprvLnStts == 'APRV02002'">
+                APRV_STTS = '결재완료',
+                APRV_END_DT = SYSDATE
+            </when>
+            <otherwise>
+                APRV_STTS = APRV_STTS -- 오류방지
+            </otherwise>
+        </choose>
+        WHERE  APRV_NO = #{aprvNo}
+
+        <if test="aprvLnStts == 'APRV02002'">
+            AND NOT EXISTS (
+            SELECT 1
+            FROM   APRV_LINE
+            WHERE  APRV_NO = #{aprvNo}
+            AND  APRV_LN_STTS != 'APRV02002'
+            )
+        </if>
+    </update>
+
+
+
+
+    <!-- 부서 문서 개수 -->
+    <select id="getDeptAprvTotal" parameterType="hashmap" resultType="int">
+        SELECT COUNT(*)
+        FROM   (
+            SELECT
+                   A.EMP_ID
+                 , A.APRV_TTL
+                 , A.APRV_STTS
+                 , A.APRV_DEL_YN
+            FROM
+                APPROVAL A
+                    JOIN
+                EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+            WHERE
+                A.APRV_DEPT_CD = #{deptCd}
+              AND
+                A.APRV_DEL_YN = 'N'
+              AND
+                A.APRV_STTS = '결재완료'
+            AND
+                A.APRV_STTS != '회수'
+        )
+        WHERE  1 = 1
+        <if test="mode!=null and mode!=''"><!-- mode가 있다면 -->
+            <if test="mode=='aprvTtl'">
+                AND    APRV_TTL    LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empId'">
+                AND    EMP_ID LIKE '%' || #{keyword} || '%'
+            </if>
+        </if>
+        <if test="mode==null or mode==''"><!-- mode가 없다면 -->
+            AND  (
+            APRV_TTL    LIKE '%' || #{keyword} || '%' OR
+            EMP_ID      LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+    </select>
+
+
+    <!-- 부서 문서 리스트 -->
+    <select id="deptAprvlist" parameterType="hashmap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT T.RNUM, T.APRV_NO, T.APRV_TTL, T.APRV_DT, T.APRV_END_DT,T.APRV_DATA,
+        T.APRV_STTS, T.APRV_DEL_YN, T.DOC_WRITER_NM
+        FROM
+        (
+            SELECT
+                ROW_NUMBER() OVER(ORDER BY APRV_END_DT DESC) RNUM
+              , A.APRV_NO
+              , A.APRV_TTL
+              , A.APRV_DT
+              , A.APRV_END_DT
+              , A.APRV_STTS
+              , A.APRV_DEL_YN
+              , A.APRV_DATA
+              , A.APRV_WORK_TAG
+              , E.EMP_NM AS DOC_WRITER_NM
+            FROM
+                APPROVAL A
+            JOIN
+                EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+            WHERE
+            A.APRV_DEPT_CD = #{deptCd}
+            AND
+                A.APRV_DEL_YN = 'N'
+            AND
+                A.APRV_STTS = '결재완료'
+            AND
+                A.APRV_STTS != '회수'
+            <if test="mode!=null and mode!=''">
+                <if test="mode=='aprvTtl'">
+                    AND    A.APRV_TTL    LIKE '%' || #{keyword} || '%'
+                </if>
+                <if test="mode=='empId'">
+                    AND    A.EMP_ID LIKE '%' || #{keyword} || '%'
+                </if>
+            </if>
+            <if test="mode==null or mode==''">
+                AND  (
+                A.APRV_TTL    LIKE '%' || #{keyword} || '%' OR
+                A.EMP_ID LIKE '%' || #{keyword} || '%'
+                )
+            </if>
+        ) T
+        WHERE T.RNUM BETWEEN (#{currentPage} * 10) - (10 - 1) AND (#{currentPage} * 10)
+        ORDER BY T.APRV_END_DT DESC
+    </select>
+
+
+    <!-- 신청한 초과근무 신청 리스트 가져오기-->
+    <select id="getOvertimeDocumentVOList" parameterType="int" resultType="overtimeDocumentVO">
+        SELECT *
+        FROM APRV_EXCS_WORK_DOC
+        WHERE EMP_ID = #{empId}
+        AND EXCS_WORK_STTS = '대기'
+    </select>
+
+    <!-- 신청한 휴가 신청 리스트 가져오기-->
+    <select id="getVacationDocumentVOList" parameterType="int" resultType="VacationDocumentVO">
+        SELECT *
+        FROM APRV_VCT_DOC
+        WHERE EMP_ID = #{empId}
+          AND VCT_STTS = '대기'
+    </select>
+
+    <!-- 신청한 출장 신청 리스트 가져오기-->
+    <select id="getTripDocumentVOList" parameterType="int" resultType="TripDocumentVO">
+        SELECT *
+        FROM APRV_BZTRP_DOC
+        WHERE EMP_ID = #{empId}
+          AND BZTRP_STTS = '대기'
+    </select>
+
+
+    <!-- 결재문서(APPROVAL) insert -->
+    <insert id="insertAprv" parameterType="approvalVO">
+        <selectKey resultType="int" order="BEFORE" keyProperty="aprvNo">
+            SELECT SEQ_APRV_NO.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT
+        INTO APPROVAL
+        (
+          APRV_NO
+        , APRV_DEPT_CD
+        , EMP_ID
+        , APRV_SE
+        , APRV_DOC_NO
+        , APRV_TTL
+        , APRV_DT
+        , APRV_EMRG_YN
+        , APRV_RLS_YN
+        , APRV_STP
+        , APRV_STTS
+        , APRV_DEL_YN
+        , APRV_DATA
+        , APRV_LN_CNT
+        , APRV_END_DT
+        , APRV_WORK_TAG
+        )
+        VALUES(#{aprvNo}, #{aprvDeptCd}, #{empId}, #{aprvSe}, #{aprvDocNo}, #{aprvTtl}
+            , SYSDATE, #{aprvEmrgYn}, #{aprvRlsYn}, 0, '진행중', 'N', #{aprvData}, 0, '', #{aprvWorkTag})
+    </insert>
+
+
+
+    <!-- 일반기안문 insert -->
+    <insert id="insertNmlDoc" parameterType="approvalVO">
+    <selectKey resultType="int" order="BEFORE" keyProperty="aprvDocNo">
+        SELECT SEQ_NML_DOC_NO.NEXTVAL FROM DUAL
+    </selectKey>
+        INSERT INTO APRV_NOMAL_DOC
+        (NML_DOC_NO, NML_CN, EMP_ID, NML_STTS_YN)
+        VALUES(#{aprvDocNo}, #{nmlCn}, #{empId}, 'N')
+    </insert>
+
+
+
+
+
+    <!--초과, 휴가, 출장 상신 시 대기로 상태 업데이트 -->
+    <!-- 휴가 -->
+    <update id="updateAttDoc_APRV01002" parameterType="approvalVO">
+        UPDATE APRV_VCT_DOC
+        SET VCT_APRV_YN='Y', VCT_STTS='신청중'
+        WHERE ATT_TYPE_ID=#{attTypeId}
+    </update>
+
+    <!-- 출장 -->
+    <update id="updateAttDoc_APRV01003" parameterType="approvalVO">
+        UPDATE APRV_BZTRP_DOC
+        SET BZTRP_APRV_YN='Y', BZTRP_STTS='신청중'
+        WHERE ATT_TYPE_ID=#{attTypeId}
+    </update>
+
+    <!-- 초과 -->
+    <update id="updateAttDoc_APRV01004" parameterType="approvalVO">
+        UPDATE APRV_EXCS_WORK_DOC
+        SET EXCS_WORK_APRV_YN='Y', EXCS_WORK_STTS='신청중'
+        WHERE ATT_TYPE_ID=#{attTypeId}
+    </update>
+
+
+    <!-- 결재선 insert -->
+    <insert id="insertAprvLineVOList" parameterType="java.util.List">
+        <foreach collection="list" item="item" separator=";" open="DECLARE BEGIN" close="; END;">
+            INSERT INTO APRV_LINE (
+            APRV_LN_NO, APRV_NO, EMP_ID, APRV_LN_LVL, APRV_LN_STTS
+            ) VALUES (
+            SEQ_APRV_LINE_NO.NEXTVAL,
+            #{item.aprvNo},
+            #{item.empId},
+            #{item.aprvLnLvl},
+            'APRV02001'
+            )
+        </foreach>
+    </insert>
+
+
+    <!-- 결재완료, 반려, 대기 상태 업데이트 해주기.. 근태랑 일반기안문까지만 일단.. -->
+    <update id="updateDocStts_APRV01002" parameterType="AprvLineVO">
+        UPDATE APRV_VCT_DOC
+        SET VCT_STTS=#{aprvLnStts}
+        WHERE ATT_TYPE_ID=#{aprvDocNo}
+    </update>
+    <update id="updateDocStts_APRV01003" parameterType="AprvLineVO">
+        UPDATE APRV_BZTRP_DOC
+        SET BZTRP_STTS=#{aprvLnStts}
+        WHERE ATT_TYPE_ID=#{aprvDocNo}
+    </update>
+    <update id="updateDocStts_APRV01004" parameterType="AprvLineVO">
+        UPDATE APRV_EXCS_WORK_DOC
+        SET EXCS_WORK_STTS=#{aprvLnStts}
+        WHERE ATT_TYPE_ID=#{aprvDocNo}
+    </update>
+
+    <update id="updateDocStts_APRV01006" parameterType="AprvLineVO">
+        UPDATE APRV_NOMAL_DOC
+        SET NML_STTS=#{aprvLnStts}
+        WHERE NML_DOC_NO=#{aprvDocNo}
+    </update>
+
+
+    <!--휴가 돌려주기 / 실제 변수로 수정함 vctTotalDays -->
+    <update id="returnUseVct" parameterType="aprvLineVO">
+        UPDATE ANNUAL_LEAVE
+        SET ANN_LEAVE_REMAIN = ANN_LEAVE_REMAIN + #{vctTotalDays},
+            ANN_LEAVE_USED = ANN_LEAVE_USED - #{vctTotalDays}
+        WHERE EMP_ID=#{docWriterId}
+    </update>
+
+
+
+
+    <!--첨부파일 가져오기 -->
+    <resultMap id="fileDetailMap" type="kr.or.ddit.vo.FileDetailVO">
+        <id property="fileDtlId" column="FILE_DTL_ID" />
+        <result property="fileId" column="FILE_ID" />
+        <result property="fileDtlPath" column="FILE_DTL_PATH" />
+        <result property="fileDtlSaveNm" column="FILE_DTL_SAVE_NM" />
+        <result property="fileDtlONm" column="FILE_DTL_O_NM" />
+        <result property="fileDtlExt" column="FILE_DTL_EXT" />
+        <result property="fileDtlDt" column="FILE_DTL_DT" />
+        <result property="empId" column="EMP_ID" />
+        <result property="fileDtlDelYn" column="FILE_DTL_DEL_YN" />
+    </resultMap>
+
+    <resultMap id="fileMap" type="kr.or.ddit.vo.FileTbVO">
+        <id property="fileId" column="FILE_ID" />
+        <result property="empId" column="EMP_ID" />
+        <result property="fileDate" column="FILE_DT" />
+        <result property="fileDelYn" column="FILE_DEL_YN" />
+        <result property="fileStts" column="FILE_STTS" />
+
+        <collection property="fileDetailVOList" resultMap="fileDetailMap" />
+    </resultMap>
+
+    <!-- 결재문서 첨부파일 가져오기 -->
+    <select id="getFileTbVO" parameterType="long" resultMap="fileMap">
+        SELECT
+            A.FILE_ID, A.EMP_ID, A.FILE_DT, A.FILE_DEL_YN, A.FILE_STTS,
+            B.FILE_DTL_ID, B.FILE_DTL_PATH, B.FILE_DTL_SAVE_NM, B.FILE_DTL_O_NM,
+            B.FILE_DTL_EXT, B.FILE_DTL_DT, B.FILE_DTL_DEL_YN
+        FROM FILE_TB A
+                 LEFT OUTER JOIN FILE_DETAIL B ON A.FILE_ID = B.FILE_ID
+        WHERE A.FILE_ID = #{fileId}
+    </select>
+
+
+
+    <!-- 관리자 페이지 통계 -->
+    <!-- 문서 점유율-->
+    <select id="getDeptDocCount" resultType="map">
+        SELECT NVL(D.DEPT_NM, '미지정') AS "team", COUNT(A.APRV_NO) AS "value"
+        FROM APPROVAL A
+                 LEFT OUTER JOIN DEPARTMENT D ON A.APRV_DEPT_CD = D.DEPT_CD
+        GROUP BY D.DEPT_NM
+    </select>
+
+    <!-- 월별/부서별  -->
+    <select id="getMonthlyDeptVolume" resultType="map">
+        SELECT *
+        FROM (
+                 SELECT TO_CHAR(A.APRV_DT, 'FMMM') || '월' AS "month",
+                        NVL(D.DEPT_NM, '미지정') AS "team"
+                 FROM APPROVAL A
+                          LEFT OUTER JOIN DEPARTMENT D ON A.APRV_DEPT_CD = D.DEPT_CD
+                 WHERE A.APRV_DT IS NOT NULL
+                   -- 올해(현재 연도) 데이터만 가져오도록
+                   AND TO_CHAR(A.APRV_DT, 'YYYY') = TO_CHAR(SYSDATE, 'YYYY')
+             )
+                 -- 행(Row)으로 있던 부서명을 열(Column)로 회전시킴!
+                 PIVOT (
+                        COUNT(*)
+        FOR "team" IN (
+            '개발1팀' AS "개발1팀",
+            '개발2팀' AS "개발2팀",
+            '개발3팀' AS "개발3팀",
+            '영업팀' AS "영업팀",
+            '경영지원팀' AS "경영지원팀"
+        )
+                )
+        ORDER BY TO_NUMBER(REPLACE("month", '월', '')) ASC
+    </select>
+
+
+    <!-- (알람수신자용) 전자결재 번호로 문서 작성자 정보+결재문서 제목 가져오기 -->
+    <select id="getDocWriterId" parameterType="int" resultType="ApprovalVO">
+        SELECT A.EMP_ID AS DOC_WRITER_ID
+             , A.APRV_TTL
+             , E.EMP_NM AS DOC_WRITER_NM
+             , E.EMP_JBGD AS POS_NM
+        FROM APPROVAL A
+                 LEFT OUTER JOIN EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <!-- (알람수신자용) 다음결재자 아이디 가져오기-->
+    <select id="getNextAprvLnId" parameterType="int" resultType="Integer">
+        SELECT EMP_ID
+        FROM (
+           SELECT EMP_ID
+           FROM APRV_LINE
+           WHERE APRV_NO = #{aprvNo}
+             AND APRV_LN_STTS = 'APRV02001'
+           ORDER BY APRV_LN_LVL ASC
+           )
+        WHERE ROWNUM = 1
+    </select>
+
+
+    <!-- 결재 수신함에서 내가 결재 완료한 목록 리스트 -->
+    <select id="getPendingDonedoneList" parameterType="hashMap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT T.*
+        FROM
+        (
+        SELECT
+        ROW_NUMBER() OVER(ORDER BY A.APRV_NO DESC) RNUM
+        , A.APRV_NO
+        , A.EMP_ID AS DOC_WRITER_ID
+        , E.EMP_NM AS DOC_WRITER_NM
+        , A.APRV_SE
+        , A.APRV_DOC_NO
+        , A.APRV_TTL
+        , A.APRV_DT
+        , A.APRV_END_DT
+        , A.APRV_EMRG_YN
+        , A.APRV_RLS_YN
+        , A.APRV_STP
+        , A.APRV_STTS
+        , A.APRV_DEL_YN
+        , A.APRV_DATA
+        , A.APRV_LN_CNT
+        , A.APRV_WORK_TAG
+        , L.APRV_LN_NO
+        , L.APRV_LN_LVL
+        , L.EMP_ID AS APRV_ID
+        , L.APRV_LN_STTS
+        , L.APRV_LN_DT
+        , L.APRV_LN_CN
+        FROM
+        APPROVAL A
+        JOIN
+        APRV_LINE L ON A.APRV_NO = L.APRV_NO
+        JOIN
+        EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        WHERE
+        A.APRV_DEL_YN = 'N'
+        AND
+        A.APRV_STTS != '회수'
+        AND L.EMP_ID = #{empId}
+        AND L.APRV_LN_STTS IN ('APRV02002', 'APRV02003')
+
+        AND NOT EXISTS (
+            SELECT 1
+            FROM APRV_LINE SUB_L
+            WHERE SUB_L.APRV_NO = A.APRV_NO
+                AND SUB_L.EMP_ID = #{empId}
+                AND SUB_L.APRV_LN_STTS NOT IN ('APRV02002', 'APRV02003')
+        )
+
+        AND L.APRV_LN_LVL = (
+            SELECT MAX(MAX_L.APRV_LN_LVL)
+            FROM APRV_LINE MAX_L
+            WHERE MAX_L.APRV_NO = A.APRV_NO
+                AND MAX_L.EMP_ID = #{empId}
+        )
+
+        <if test="mode!=null and mode!=''">
+            <if test="mode=='aprvTtl'">
+                AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empId'">
+                AND A.EMP_ID LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empNm'">
+                AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+            </if>
+        </if>
+        <if test="mode==null or mode==''">
+            AND (
+            A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+            A.EMP_ID   LIKE '%' || #{keyword} || '%' OR
+            E.EMP_NM   LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+
+        ) T
+        WHERE RNUM BETWEEN (#{currentPage} * 10) - (10 - 1) AND (#{currentPage} * 10)
+        ORDER BY APRV_DT DESC
+    </select>
+
+
+    <!-- 수신함에서 내가 결재 완료한 문서의 개수 -->
+    <!-- 수신함에서 내가 결재 완료(승인/반려)한 문서의 개수 -->
+    <select id="getPendingDoneTotal" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM   APPROVAL A
+        JOIN   APRV_LINE L ON A.APRV_NO = L.APRV_NO
+        JOIN   EMPLOYEE E ON A.EMP_ID = E.EMP_ID
+        WHERE  A.APRV_DEL_YN = 'N'
+        AND
+                 A.APRV_STTS != '회수'
+        AND  L.EMP_ID = #{empId}
+        AND  L.APRV_LN_STTS IN ('APRV02002', 'APRV02003')
+
+        AND NOT EXISTS (
+        SELECT 1
+        FROM APRV_LINE SUB_L
+        WHERE SUB_L.APRV_NO = A.APRV_NO
+        AND SUB_L.EMP_ID = #{empId}
+        AND SUB_L.APRV_LN_STTS NOT IN ('APRV02002', 'APRV02003')
+        )
+
+        AND L.APRV_LN_LVL = (
+        SELECT MAX(MAX_L.APRV_LN_LVL)
+        FROM APRV_LINE MAX_L
+        WHERE MAX_L.APRV_NO = A.APRV_NO
+        AND MAX_L.EMP_ID = #{empId}
+        )
+
+        <if test="mode!=null and mode!=''">
+            <if test="mode=='aprvTtl'">
+                AND A.APRV_TTL LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empId'">
+                AND A.EMP_ID LIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="mode=='empNm'">
+                AND E.EMP_NM LIKE '%' || #{keyword} || '%'
+            </if>
+        </if>
+        <if test="mode==null or mode==''">
+            AND (
+            A.APRV_TTL LIKE '%' || #{keyword} || '%' OR
+            A.EMP_ID   LIKE '%' || #{keyword} || '%' OR
+            E.EMP_NM   LIKE '%' || #{keyword} || '%'
+            )
+        </if>
+    </select>
+
+    <!-- 진행중 프로젝트 가져오기(결재 업무 태그용) -->
+    <!-- (리더 OR 참여자) -->
+    <select id="getIngProjectList" resultType="projectVO">
+        SELECT P.PROJ_NO AS projNo,
+            P.PROJ_TTL AS projTtl
+        FROM PROJECT P
+        WHERE (
+            P.EMP_ID = #{empId}
+                OR EXISTS (
+                SELECT 1
+                FROM PROJECT_PARTICIPANT PP
+                WHERE PP.PROJ_NO = P.PROJ_NO
+                  AND PP.EMP_ID = #{empId}
+            )
+            )
+          AND P.PROJ_STTS IN ('진행', '지연')
+        ORDER BY P.PROJ_END_DT DESC
+    </select>
+
+
+    <!-- 최근 종료된 프로젝트 (리더 OR 참여자, 3개월 이내) -->
+    <select id="getDoneProjectList" resultType="projectVO">
+        SELECT P.PROJ_NO AS projNo,
+            P.PROJ_TTL AS projTtl
+        FROM PROJECT P
+        WHERE (
+            P.EMP_ID = #{empId}
+                OR EXISTS (
+                SELECT 1
+                FROM PROJECT_PARTICIPANT PP
+                WHERE PP.PROJ_NO = P.PROJ_NO
+                  AND PP.EMP_ID = #{empId}
+            )
+            )
+          AND P.PROJ_STTS = '완료'
+          AND P.PROJ_END_DT >= ADD_MONTHS(SYSDATE, -3)
+        ORDER BY P.PROJ_END_DT DESC
+    </select>
+
+
+    <!-- 현재 내 부서의 예산 잔액 불러오기(리스트) -->
+    <select id="getBudgetListByDept" parameterType="int" resultType="budgetDetailVO">
+        SELECT
+            D.BGT_CD,
+            D.BGT_M_CD,
+            D.BGT_ITM_NM,
+            NVL(D.BGT_AMT, 0) AS bgtAmt,
+            NVL(D.BGT_EXCN, 0) AS bgtExcn
+        FROM BUDGET_MASTER M
+                 INNER JOIN BUDGET_DETAIL D ON M.BGT_M_CD = D.BGT_M_CD
+        WHERE M.DEPT_CD = #{deptCd}
+          AND M.BGT_YR = TO_CHAR(SYSDATE, 'YYYY') ORDER BY D.BGT_CD ASC
+    </select>
+
+
+
+
+    <!-- 지출 품의서 마스터 insert(1:N중 1을 insert) -->
+    <!-- selectKey 사용 -->
+    <insert id="insertExpndDoc" parameterType="approvalVO">
+        <selectKey resultType="int" keyProperty="aprvDocNo" order="BEFORE">
+            SELECT SEQ_EXPND_DOC.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO APRV_EXPND_DOC (
+            EXPND_DOC_NO
+            ,EMP_ID
+            ,EXPND_STTS_YN
+        ) VALUES (
+            #{aprvDocNo}
+            ,#{empId}
+            ,'N'
+        )
+    </insert>
+
+
+    <!-- 비목 별 품의 테이블 insert(한행씩..) -->
+    <insert id="insertExpndDtl" parameterType="expndDocVO">
+        INSERT INTO APRV_EXPND_DTL (
+                                     EXPND_DTL_NO
+                                   , EXPND_DOC_NO
+                                   , BGT_M_CD
+                                   , BGT_CD
+                                   , EXPND_AMT
+                                   , EXPND_RSN
+        ) VALUES (
+                   SEQ_EXPND_DTL.NEXTVAL
+                 , #{expndDocNo}
+                 , #{bgtMCd}
+                 , #{bgtCd}
+                 , #{expndAmt}
+                 , #{expndRsn}
+                 )
+    </insert>
+
+    <!-- 예산 사용량 업뎃 -->
+    <update id="updateBudgetUsage" parameterType="expndDocVO">
+        UPDATE BUDGET_DETAIL
+        SET BGT_EXCN = BGT_EXCN + #{expndAmt}
+        WHERE BGT_M_CD = #{bgtMCd}
+          AND BGT_CD = #{bgtCd}
+          AND (BGT_AMT - BGT_EXCN) >= #{expndAmt}
+    </update>
+
+
+    <!-- 예산 로그 insert -->
+    <insert id="insertBudgetLog" parameterType="kr.or.ddit.vo.BudgetLogVO">
+        INSERT INTO
+            BUDGET_LOG (
+                 LOG_NO
+               , BGT_M_CD
+               , BGT_CD
+               , BGT_CHG_SE
+               , BGT_CHG_AMT
+               , BGT_CHG_RSN
+               , EMP_ID
+               , BGT_CHG_DT
+               , APRV_NO
+        ) VALUES (
+                   SEQ_BUDGET_LOG_NO.NEXTVAL
+                 , #{bgtMCd}
+                 , #{bgtCd}
+                 , #{bgtChgSe}
+                 , #{bgtChgAmt}
+                 , #{bgtChgRsn}
+                 , #{empId}
+                 , SYSDATE
+                 , #{aprvNo}
+                 )
+    </insert>
+
+
+
+
+    <!-- 예산 지출 내역 불러오기.. -->
+    <select id="getExpndDtlListByAprvNo" parameterType="int" resultType="expndDocVO">
+        SELECT
+            C.BGT_M_CD
+             , C.BGT_CD
+             , C.EXPND_AMT
+             , C.EXPND_RSN
+        FROM APPROVAL A
+                 INNER JOIN APRV_EXPND_DOC B ON A.APRV_DOC_NO = B.EXPND_DOC_NO
+                 INNER JOIN APRV_EXPND_DTL C ON B.EXPND_DOC_NO = C.EXPND_DOC_NO
+        WHERE A.APRV_NO = #{aprvNo}
+    </select>
+
+    <!-- 예산 돌려주기 -->
+    <update id="refundBudgetUsage" parameterType="expndDocVO">
+        UPDATE BUDGET_DETAIL
+        SET BGT_EXCN = BGT_EXCN - #{expndAmt}
+        WHERE BGT_M_CD = #{bgtMCd}
+          AND BGT_CD = #{bgtCd}
+    </update>
+
+    <!--회수할때 상태 회수로 바꾸기 -->
+    <update id="withdrawDocument" parameterType="int">
+        UPDATE APPROVAL
+        SET APRV_STTS = '회수'
+        WHERE  APRV_NO = #{aprvNo}
+    </update>
+
+
+    <!-- 회수만 따로 하지머.. -->
+    <select id="getWithDrawTotal" parameterType="hashMap" resultType="int">
+        SELECT COUNT(*)
+        FROM   APPROVAL
+        WHERE  1 = 1
+        AND APRV_STTS = '회수'
+        <include refid="where"></include>
+    </select>
+
+    <!-- (사용자)문서 목록
+    -->
+    <select id="withDrawlist" parameterType="hashMap" resultType="kr.or.ddit.vo.ApprovalVO">
+        SELECT T.*
+        FROM
+        (
+        SELECT ROW_NUMBER() OVER(ORDER BY APRV_DT DESC) RNUM
+        , APRV_NO
+        , EMP_ID
+        , APRV_SE
+        , APRV_DOC_NO
+        , APRV_TTL
+        , APRV_DT
+        , APRV_END_DT
+        , APRV_EMRG_YN
+        , APRV_RLS_YN
+        , APRV_STP
+        , APRV_STTS
+        , APRV_DEL_YN
+        , APRV_DATA
+        , APRV_DEPT_CD
+        , APRV_WORK_TAG
+        FROM   APPROVAL
+        WHERE  1 = 1
+        AND APRV_STTS = '회수'
+        <include refid="where"></include>
+        ) T
+        WHERE RNUM BETWEEN (#{currentPage} * 10) - (10 - 1) AND (#{currentPage} * 10)
+        ORDER BY APRV_DT DESC
+    </select>
+
+
+
+
+
+</mapper>

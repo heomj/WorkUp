@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.project.ProjectMemberMapper">
+
+
+    <!-- 프로젝트 참여자 리스트 조회 -->
+    <select id="memberStatus" parameterType="int" resultMap="memMap">
+        SELECT  P.EMP_ID,
+                P.PRTPNT_NM,
+                P.PROJ_NO,
+                D.DEPT_NM,
+                E.EMP_JBGD,
+                COUNT(T.TASK_NO) as total,
+                NVL(SUM(CASE WHEN T.TASK_STTS = '대기' THEN 1 END), 0) as wait,
+                NVL(SUM(CASE WHEN T.TASK_STTS = '진행' THEN 1 END), 0) as prog,
+                NVL(SUM(CASE WHEN T.TASK_STTS = '완료' THEN 1 END), 0) as comp
+        FROM    PROJECT_PARTICIPANT P
+            INNER JOIN  EMPLOYEE E ON (P.EMP_ID = E.EMP_ID)
+            INNER JOIN  DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+            LEFT OUTER JOIN     TASK_PARTICIPANT TP ON (P.EMP_ID = TP.EMP_ID)
+            LEFT OUTER JOIN     TASK T ON (TP.TASK_NO = T.TASK_NO AND P.PROJ_NO = T.PROJ_NO)
+        WHERE   P.PROJ_NO = #{projNo}
+        GROUP BY    P.EMP_ID, P.PRTPNT_NM, P.PROJ_NO, D.DEPT_NM, E.EMP_JBGD
+        ORDER BY
+            CASE E.EMP_JBGD
+                WHEN '팀장' THEN 1
+                WHEN '대리' THEN 2
+                WHEN '주임' THEN 3
+                WHEN '사원' THEN 4
+                ELSE 5
+            END,
+            P.PRTPNT_NM
+    </select>
+
+<!--
+    <select id="memberStatus2" parameterType="int" resultMap="memMap">
+        SELECT    p.emp_id
+                    , p.prtpnt_nm
+                    , p.proj_no
+                    , d.dept_nm
+                    , e.emp_jbgd
+                    , e.emp_jbgd_cd
+                    , jc.com_det_code_nm emp_jbgd_cd_nm
+                    , COUNT(tp.task_no)  AS "total"
+                    , COUNT(
+                        CASE WHEN t.task_stts = '대기' THEN 1 END ) AS "wait"
+                    , COUNT(
+                        CASE WHEN t.task_stts = '진행' THEN 1 END ) AS "prog"
+                    , COUNT(
+                        CASE WHEN t.task_stts = '완료' THEN 1 END ) AS "comp"
+        FROM    project_participant p
+                INNER JOIN employee          e ON ( p.emp_id = e.emp_id )
+                INNER JOIN department        d ON ( e.dept_cd = d.dept_cd )
+                LEFT OUTER JOIN task_participant  tp ON ( p.emp_id = tp.emp_id )
+                LEFT OUTER JOIN task              t ON ( tp.task_no = t.task_no
+                                                         AND p.proj_no = t.proj_no )
+                LEFT OUTER JOIN com_det_code_info jc ON e.emp_jbgd_cd = jc.com_det_code
+        WHERE   p.proj_no = #{projNo}
+        GROUP BY    P.EMP_ID, P.PRTPNT_NM, P.PROJ_NO, D.DEPT_NM, E.EMP_JBGD, E.EMP_JBGD_CD, JC.com_det_code_nm
+        ORDER BY    E.EMP_JBGD_CD, P.PRTPNT_NM ASC
+    </select>
+-->
+
+    <!-- 통계 리스트 -->
+    <select id="memberTaskStatus" parameterType="int" resultMap="memMap">
+        SELECT  P.EMP_ID,
+                P.PRTPNT_NM,
+                P.PROJ_NO,
+                D.DEPT_NM,
+                E.EMP_JBGD,
+                COUNT(TP.TASK_NO) as total,
+                NVL(SUM(CASE WHEN T.TASK_STTS = '대기' THEN 1 END), 0) as wait,
+                NVL(SUM(CASE WHEN T.TASK_STTS = '진행' THEN 1 END), 0) as prog,
+                NVL(SUM(CASE WHEN T.TASK_STTS = '완료' THEN 1 END), 0) as comp,
+                NVL(SUM(CASE WHEN T.TASK_IMPT = '높음' THEN 1 END), 0) as impt_high,
+                NVL(SUM(CASE WHEN T.TASK_IMPT = '보통' THEN 1 END), 0) as impt_normal,
+                NVL(SUM(CASE WHEN T.TASK_IMPT = '낮음' THEN 1 END), 0) as impt_low
+        FROM    PROJECT_PARTICIPANT P
+            INNER JOIN  EMPLOYEE E ON (P.EMP_ID = E.EMP_ID)
+            INNER JOIN  DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+            LEFT OUTER JOIN     TASK_PARTICIPANT TP ON (P.EMP_ID = TP.EMP_ID)
+            LEFT OUTER JOIN     TASK T ON (TP.TASK_NO = T.TASK_NO AND P.PROJ_NO = T.PROJ_NO)
+        WHERE   P.PROJ_NO = #{projNo}
+        GROUP BY    P.EMP_ID, P.PRTPNT_NM, P.PROJ_NO, D.DEPT_NM, E.EMP_JBGD
+        ORDER BY
+            SUM(
+                CASE
+                    WHEN T.TASK_STTS = '완료' AND T.TASK_IMPT = '높음' THEN 3
+                    WHEN T.TASK_STTS = '완료' AND T.TASK_IMPT = '보통' THEN 2
+                    WHEN T.TASK_STTS = '완료' AND T.TASK_IMPT = '낮음' THEN 1
+                    WHEN T.TASK_STTS = '진행' THEN 0.5
+                    ELSE 0
+                END
+            ) DESC,
+        comp DESC,
+        CASE E.EMP_JBGD
+            WHEN '팀장' THEN 1
+            WHEN '대리' THEN 2
+            WHEN '주임' THEN 3
+            WHEN '사원' THEN 4
+            ELSE 5
+        END
+    </select>
+
+
+
+    <!-- 프로젝트 기본 정보 조회 (제목 가져오기용) -->
+    <select id="projectTitle" parameterType="int" resultType="kr.or.ddit.vo.project.ProjectVO">
+        SELECT PROJ_NO, PROJ_TTL
+        FROM   PROJECT
+        WHERE  PROJ_NO = #{projNo}
+    </select>
+
+
+
+
+    <!-- [채팅] -->
+    <select id="findDirectRoom" resultType="kr.or.ddit.vo.ChatRoomVO">
+        SELECT
+                A.CHAT_RM_NO,
+                A.CHAT_RM_TTL,
+                A.CHAT_RM_TYPE,
+                A.CHAT_RM_BGNG_DT
+        FROM    CHAT_ROOM A
+        INNER JOIN  CHAT B ON A.CHAT_RM_NO = B.CHAT_RM_NO
+        WHERE   A.CHAT_RM_TYPE = '1'
+        AND     A.CHAT_RM_YN = 'Y'
+        AND     B.CHAT_RM_NO IN (
+                                    SELECT  CHAT_RM_NO
+                                    FROM    CHAT
+                                    WHERE   EMP_ID IN (#{myId}, #{targetId})
+                                    GROUP BY    CHAT_RM_NO
+                                    HAVING  COUNT(DISTINCT EMP_ID) = 2
+                                )
+        AND     (SELECT COUNT(*) FROM CHAT
+                 WHERE  CHAT_RM_NO = A.CHAT_RM_NO) = 2
+        GROUP BY    A.CHAT_RM_NO, A.CHAT_RM_TTL, A.CHAT_RM_TYPE, A.CHAT_RM_BGNG_DT
+    </select>
+
+    <insert id="insertChatMember">
+        INSERT INTO CHAT (
+                            CHAT_RM_NO,
+                            EMP_ID,
+                            CHAT_USER_NM,
+                            CHAT_USER_AUTH,
+                            CHAT_USER_BGNG_DT
+                        )
+        VALUES (
+                #{chatRmNo},
+                #{empId},
+                (SELECT EMP_NM FROM EMPLOYEE WHERE EMP_ID = #{empId}),
+                #{chatUserAuth},
+                SYSDATE
+                )
+    </insert>
+
+
+    <resultMap id="memMap" type="kr.or.ddit.vo.project.PrtpntVO">
+        <id property="empId" column="EMP_ID" />
+        <result property="prtpntNm" column="PRTPNT_NM" />
+        <result property="projNo" column="PROJ_NO" />
+        <result property="deptNm" column="DEPT_NM" />
+        <result property="jbgdNm" column="EMP_JBGD" />
+        <result property="totalTasks" column="TOTAL" />
+        <result property="waitTasks" column="WAIT" />
+        <result property="progTasks" column="PROG" />
+        <result property="compTasks" column="COMP" />
+        <result property="imptHigh" column="impt_high" />
+        <result property="imptNormal" column="impt_normal" />
+        <result property="imptLow" column="impt_low" />
+    </resultMap>
+
+</mapper>

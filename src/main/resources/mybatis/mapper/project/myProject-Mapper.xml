@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.project.MyProjectMapper">
+<!--'나의 프로젝트' 리스트 띄우기-->
+    <select id="getMyProjectList" resultType="ProjectVO" parameterType="int" >
+        SELECT
+               A.PROJ_NO
+             , A.EMP_ID
+             , A.PROJ_TTL
+             , A.PROJ_BGNG_DT
+             , A.PROJ_END_DT
+             , A.PROJ_STTS
+             , A.PROJ_DTL
+             , A.PROJ_COLOR
+             , A.PROJ_IPT
+             , A.PROJ_NM
+             , B.PRTPNT_PROJ_IPT
+             , B.PROJ_NO
+             , B.PRTPNT_COLOR
+             , B.PRTPNT_NM
+             , B.PRTPNT_PROJ_IPT
+             , (SELECT ROUND(AVG(TASK_PRGRT)) FROM TASK T WHERE T.PROJ_NO = A.PROJ_NO) AS projPrgrt
+        <![CDATA[
+             , CASE
+                   WHEN SYSDATE < A.PROJ_BGNG_DT THEN 0
+                   WHEN SYSDATE > A.PROJ_END_DT THEN 100
+                   ELSE ROUND((SYSDATE - A.PROJ_BGNG_DT) / (A.PROJ_END_DT - A.PROJ_BGNG_DT) * 100)
+            END AS TIME_PRGRT
+     ]]>
+        FROM PROJECT A
+        LEFT OUTER JOIN PROJECT_PARTICIPANT B
+        ON A.PROJ_NO=B.PROJ_NO
+        WHERE B.EMP_ID=#{empId}
+    </select>
+<!--  참여자 넣기 -->
+    <select id="getPrtpntFromProjNo" resultType="PrtpntVO" parameterType="int" >
+
+        SELECT A.*
+        FROM PROJECT_PARTICIPANT A
+        WHERE A.PROJ_NO = #{projNo}
+    </select>
+<!-- 일감을 위한 리절트맵 -->
+    <resultMap id="TaskResultMap" type="taskVO">
+        <id property="taskNo" column="TASK_NO"/>
+        <result property="taskTtl" column="TASK_TTL"/>
+        <result property="taskCn" column="TASK_CN"/>
+        <result property="taskStts" column="TASK_STTS"/>
+        <result property="taskPrgrt" column="TASK_PRGRT"/>
+        <result property="taskImpt" column="TASK_IMPT"/>
+        <result property="taskBgngDt" column="TASK_BGNG_DT"/>
+        <result property="taskEndDt" column="TASK_END_DT"/>
+
+        <collection property="taskParticipantVOList" ofType="taskParticipantVO">
+            <id property="prtpntNo" column="PRTPNT_NO"/>
+            <result property="empId" column="EMP_ID"/>
+            <result property="prtpntColor" column="PRTPNT_COLOR"/> <result property="empNm" column="EMP_NM"/>
+        </collection>
+    </resultMap>
+<!--    /*    SELECT A.*
+    ,  (SELECT ROUND(AVG(TASK_PRGRT)) FROM TASK T WHERE T.PROJ_NO = A.PROJ_NO) AS projPrgrt
+    FROM PROJECT A where A.PROJ_NO=#{projNo}*/-->
+    <!-- 개별 프로젝트 -->
+    <select id="getProjectByNo" resultType="ProjectVO">
+
+            SELECT A.*
+                /* 1. 업무 진척도: 하위 작업(TASK)들의 평균 진행률 */
+                 , (SELECT ROUND(AVG(TASK_PRGRT))
+                    FROM TASK T
+                    WHERE T.PROJ_NO = A.PROJ_NO) AS projPrgrt
+
+                /* 2. 기간 진척도: 전체 기간 중 오늘이 차지하는 비중 (CDATA로 기호 보호) */
+    <![CDATA[
+                 , CASE
+                       WHEN SYSDATE < A.PROJ_BGNG_DT THEN 0
+                       WHEN SYSDATE > A.PROJ_END_DT THEN 100
+                       ELSE ROUND((SYSDATE - A.PROJ_BGNG_DT) / (A.PROJ_END_DT - A.PROJ_BGNG_DT) * 100)
+                END AS TIME_PRGRT
+    ]]>
+    FROM PROJECT A
+            WHERE A.PROJ_NO = #{projNo}
+    </select>
+<!--프로젝트에 일감 붙이기-->
+    <select id="getTasksByNo" resultMap="TaskResultMap">
+        SELECT
+            T.TASK_NO
+             , T.TASK_TTL
+             , T.TASK_CN
+             , T.TASK_STTS
+             , T.TASK_PRGRT
+             , T.TASK_IMPT
+             , T.TASK_BGNG_DT
+             , T.TASK_END_DT
+             , P.PRTPNT_NO
+             , P.EMP_ID
+             , P.PRTPNT_COLOR
+             , E.EMP_NM
+        FROM TASK T
+                 LEFT JOIN TASK_PARTICIPANT P ON T.TASK_NO = P.TASK_NO
+                 LEFT JOIN EMPLOYEE E ON P.EMP_ID = E.EMP_ID
+        WHERE T.PROJ_NO = #{projNo}
+        ORDER BY
+            CASE T.TASK_IMPT
+                WHEN '높음' THEN 1
+                WHEN '보통' THEN 2
+                WHEN '낮음' THEN 3
+                ELSE 4
+                END ASC,
+            T.TASK_NO DESC
+    </select>
+
+    <!--[배치] 프로젝트 지연처리 대상 받아오기 projNo-->
+    <select id="getDelayedProjectIds" resultType="int">
+        select PROJ_NO from PROJECT
+        <![CDATA[
+        WHERE PROJ_END_DT < SYSDATE
+          AND PROJ_STTS != '지연'
+        AND PROJ_STTS != '완료'
+        ]]>
+    </select>
+    <!--[배치] 프로젝트 지연처리 대상 받아오기 empId-->
+    <select id="getDelayedProjectempIds" resultType="int">
+        select EMP_ID from PROJECT
+        <![CDATA[
+        WHERE PROJ_END_DT < SYSDATE
+          AND PROJ_STTS != '지연'
+        AND PROJ_STTS != '완료'
+        ]]>
+    </select>
+
+    <!--[배치] 프로젝트 지연처리-->
+    <update id="updateDelayedProjects">
+        UPDATE PROJECT
+        SET PROJ_STTS = '지연'
+        <![CDATA[
+        WHERE PROJ_END_DT < SYSDATE
+        AND PROJ_STTS != '지연'
+        AND PROJ_STTS != '완료'
+        ]]>
+    </update>
+
+    <!--[배치] 청크 : 일감 선택-->
+    <select id="getDelayedTasks" resultMap="TaskResultMap">
+        SELECT A.*, B.*
+        FROM TASK A
+                 JOIN TASK_PARTICIPANT B
+                      ON A.TASK_NO=B.TASK_NO
+        <![CDATA[
+        WHERE A.TASK_END_DT  < SYSDATE
+        AND A.TASK_STTS != '지연'
+        AND A.TASK_STTS != '완료'
+        ]]>
+        ORDER BY A.TASK_NO ASC
+    </select>
+
+    <!--[배치] 청크 : 일감 지연처리-->
+    <update id="updateDelayedTasks" parameterType="TaskVO">
+        UPDATE TASK
+        SET TASK_STTS = '지연'
+        WHERE TASK_NO = #{taskNo}
+    </update>
+
+
+
+</mapper>

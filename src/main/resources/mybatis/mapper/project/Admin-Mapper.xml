@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.project.AdminMapper">
+
+    <!-- 프로젝트 생성 시 "사원들 조회하기(팀장빼고)" -->
+    <select id="emplist" resultType="kr.or.ddit.vo.EmployeeVO">
+        SELECT A.EMP_ID, A.EMP_NM, A.DEPT_CD, A.EMP_PROFILE, A.EMP_JBGD
+        , B.DEPT_NM
+        , (
+            SELECT COUNT(*)
+            FROM PROJECT C, PROJECT_PARTICIPANT D
+            WHERE C.PROJ_NO = D.PROJ_NO
+            AND D.EMP_ID = A.EMP_ID
+            AND C.PROJ_STTS = '진행'
+        ) AS PROJECT_COUNT
+        FROM EMPLOYEE A
+            LEFT OUTER JOIN DEPARTMENT B ON A.DEPT_CD = B.DEPT_CD
+        WHERE A.EMP_ROLE = '사원'
+            AND A.EMP_STTS = 'Y'
+    </select>
+
+    <!-- 내가 담당하고 있는 프로젝트 List 불러오기 -->
+    <resultMap id="projectList" type="kr.or.ddit.vo.project.ProjectVO">
+        <id property="projNo" column="PROJ_NO" />
+        <result property="empId" column="EMP_ID" />
+        <result property="projTtl" column="PROJ_TTL" />
+        <result property="projBgngDt" column="PROJ_BGNG_DT" />
+        <result property="projEndDt" column="PROJ_END_DT" />
+        <result property="projStts" column="PROJ_STTS" />
+        <result property="projDtl" column="PROJ_DTL" />
+        <result property="projColor" column="PROJ_COLOR" />
+        <result property="projIpt" column="PROJ_IPT" />
+        <result property="projNm" column="PROJ_NM" />
+        <result property="projPrgrt" column="projPrgrt" />
+        <result property="timePrgrt" column="TIME_PRGRT" />
+
+        <collection property="prtpntVOList" ofType="kr.or.ddit.vo.project.PrtpntVO">
+            <id property="projNo" column="PROJ_NO" />
+            <id property="empId" column="PRTPNT_ID" />
+            <result property="prtpntNm" column="PRTPNT_NM" />
+        </collection>
+    </resultMap>
+
+    <select id="myprojectlist" parameterType="int" resultMap="projectList">
+        SELECT P.PROJ_NO, P.EMP_ID, P.PROJ_TTL, P.PROJ_BGNG_DT, P.PROJ_END_DT,
+        P.PROJ_STTS, P.PROJ_DTL, P.PROJ_COLOR, P.PROJ_IPT, P.PROJ_NM,
+        (SELECT ROUND(AVG(TASK_PRGRT)) FROM TASK T WHERE T.PROJ_NO = P.PROJ_NO) AS projPrgrt,
+        <![CDATA[
+            CASE
+                WHEN SYSDATE < P.PROJ_BGNG_DT THEN 0
+                WHEN SYSDATE > P.PROJ_END_DT THEN 100
+                ELSE ROUND((SYSDATE - P.PROJ_BGNG_DT) / (P.PROJ_END_DT - P.PROJ_BGNG_DT) * 100)
+                END AS TIME_PRGRT,
+       ]]>
+        M.EMP_ID AS PRTPNT_ID , M.PRTPNT_NM
+        FROM PROJECT P
+        LEFT OUTER JOIN PROJECT_PARTICIPANT M ON (P.PROJ_NO = M.PROJ_NO)
+        WHERE P.EMP_ID = #{empId}
+        ORDER BY P.PROJ_NO DESC
+    </select>
+
+    <!-- 프로젝트tab (생성) -->
+    <insert id="createproject" parameterType="kr.or.ddit.vo.project.ProjectVO">
+        <selectKey keyProperty="projNo" resultType="int" order="BEFORE">
+            SELECT SEQ_PROJECT.NEXTVAL FROM DUAL
+        </selectKey>
+
+        INSERT INTO PROJECT (PROJ_NO, EMP_ID, PROJ_TTL, PROJ_BGNG_DT, PROJ_END_DT
+        , PROJ_STTS, PROJ_DTL, PROJ_COLOR, PROJ_IPT, PROJ_NM)
+        VALUES (#{projNo},#{empId}, #{projTtl}, #{projBgngDt}, #{projEndDt}
+        , '진행', #{projDtl}, #{projColor}, 'N', #{projNm})
+    </insert>
+
+    <!-- 프로젝트참여자tab (생성) -->
+    <insert id="participant" parameterType="java.util.List">
+        INSERT ALL
+        <foreach collection="list" item="item">
+            INTO PROJECT_PARTICIPANT (PROJ_NO, EMP_ID, PRTPNT_NM) VALUES (#{item.projNo}, #{item.empId}, #{item.prtpntNm})
+        </foreach>
+        SELECT * FROM DUAL  <!-- 오라클은 마침표를 찍어줘야한대 .. 그래서 DUAL로 .. -->
+    </insert>
+
+    <!-- 별 중요도 -->
+    <update id="staript" parameterType="kr.or.ddit.vo.project.ProjectVO">
+        UPDATE PROJECT
+        <set>
+            <if test='projIpt == "Y"'>
+                PROJ_IPT = 'N'
+            </if>
+            <if test='projIpt == "N"'>
+                PROJ_IPT = 'Y'
+            </if>
+        </set>
+        WHERE PROJ_NO = #{projNo}
+    </update>
+
+    <!-- 프로젝트 완료(종료) / 별도 뻇음 ! -->
+    <update id="finishpjt" parameterType="kr.or.ddit.vo.project.ProjectVO">
+        UPDATE PROJECT
+        SET PROJ_STTS = #{projStts}
+        , PROJ_IPT = 'N'
+        WHERE PROJ_NO = #{projNo}
+    </update>
+
+
+
+    <!-- ============== 관리자 부서별 프로젝트 List / 일감 List / 참여자 List 조회 시작 ============ -->
+    <resultMap id="participantMap" type="kr.or.ddit.vo.project.TaskParticipantVO">
+        <id property="prtpntNo" column="PRTPNT_NO"/>
+        <result property="empId" column="PART_EMP_ID"/>
+        <result property="prtpntColor" column="PRTPNT_COLOR"/>
+        <result property="taskNo" column="TASK_NO"/>
+        <result property="empNm" column="EMP_NM"/>
+        <result property="taskCnt" column="taskCnt" />
+    </resultMap>
+
+
+    <resultMap id="taskMap" type="kr.or.ddit.vo.project.TaskVO">
+        <id property="taskNo" column="TASK_NO"/>
+        <result property="projNo" column="TASK_PROJ_NO"/>
+        <result property="taskUpNo" column="TASK_UP_NO"/>
+        <result property="empId" column="TASK_EMP_ID"/>
+        <result property="taskNm" column="TASK_NM"/>
+        <result property="taskTtl" column="TASK_TTL"/>
+        <result property="taskCn" column="TASK_CN"/>
+        <result property="taskStts" column="TASK_STTS"/>
+        <result property="taskPrgrt" column="TASK_PRGRT"/>
+        <result property="taskImpt" column="TASK_IMPT"/>
+        <result property="taskRnk" column="TASK_RNK"/>
+        <result property="taskCrtDt" column="TASK_CRT_DT"/>
+        <result property="taskMdfcnDt" column="TASK_MDFCN_DT"/>
+        <result property="taskActlBgngDt" column="TASK_ACTL_BGNG_DT"/>
+        <result property="taskBgngDt" column="TASK_BGNG_DT"/>
+        <result property="taskEndDt" column="TASK_END_DT"/>
+        <collection property="taskParticipantVOList" resultMap="participantMap"/>
+    </resultMap>
+
+
+    <resultMap id="projectMap" type="kr.or.ddit.vo.project.ProjectVO">
+        <id property="projNo" column="PROJ_NO"/>
+        <result property="empId" column="PROJ_LEADER_ID"/>
+        <result property="projNm" column="PROJ_NM"/>
+        <result property="projTtl" column="PROJ_TTL"/>
+        <result property="projPrgrt" column="projPrgrt"/>
+        <result property="projBgngDt" column="PROJ_BGNG_DT"/>
+        <result property="projEndDt" column="PROJ_END_DT"/>
+        <result property="projStts" column="PROJ_STTS"/>
+        <result property="projDtl" column="PROJ_DTL"/>
+        <result property="projColor" column="PROJ_COLOR"/>
+        <result property="projIpt" column="PROJ_IPT"/>
+        <collection property="taskVOList" resultMap="taskMap" notNullColumn="TASK_NO"/>
+        <collection property="prtpntVOList" resultMap="prtpntMap"/>
+    </resultMap>
+
+    <resultMap id="prtpntMap" type="kr.or.ddit.vo.project.PrtpntVO">
+        <id property="empId" column="PRT_EMP_ID"/>
+        <id property="projNo" column="PROJ_NO"/>
+        <result property="prtpntNm" column="PRTPNT_NM"/>
+    </resultMap>
+
+    <select id="deptProjectList" parameterType="int" resultMap="projectMap">
+        SELECT P.*,
+            T.*,
+            TP.*,
+            PP.*,
+            E2.EMP_NM AS EMP_NM,
+            TP.EMP_ID AS PART_EMP_ID,
+            PP.EMP_ID AS PRT_EMP_ID,
+            T.EMP_ID AS TASK_EMP_ID,
+            T.PROJ_NO AS TASK_PROJ_NO,
+            (SELECT NVL(ROUND(AVG(TASK_PRGRT)), 0)
+                FROM TASK T
+                WHERE T.PROJ_NO = P.PROJ_NO) AS projPrgrt,
+            (SELECT COUNT(*)
+                FROM TASK_PARTICIPANT TP
+                WHERE T.TASK_NO = TP.TASK_NO) AS taskCnt
+        FROM PROJECT P
+            LEFT OUTER JOIN PROJECT_PARTICIPANT PP ON P.PROJ_NO = PP.PROJ_NO
+            LEFT OUTER JOIN EMPLOYEE E ON  E.EMP_ID = P.EMP_ID
+            LEFT OUTER JOIN TASK T ON T.PROJ_NO = P.PROJ_NO
+            LEFT OUTER JOIN TASK_PARTICIPANT TP ON T.TASK_NO = TP.TASK_NO
+            LEFT OUTER JOIN EMPLOYEE E2 ON TP.EMP_ID = E2.EMP_ID
+        WHERE E.DEPT_CD = #{deptCd}
+            ORDER BY  P.PROJ_END_DT ASC
+    </select>
+
+    <!-- ============== 관리자 부서별 프로젝트 List / 일감 List / 참여자 List 조회 끝 ============ -->
+
+    <!-- 대시보드에서 진행중인 프로젝트 List 띄우기-->
+    <select id="dashboardProject" parameterType="int" resultType="kr.or.ddit.vo.project.ProjectVO">
+        SELECT P.PROJ_NO
+            , P.PROJ_TTL
+            , P.PROJ_BGNG_DT
+            , P.PROJ_END_DT
+            ,(SELECT ROUND(AVG(TASK_PRGRT)) FROM TASK T WHERE T.PROJ_NO = P.PROJ_NO) AS projPrgrt
+        FROM PROJECT P LEFT OUTER JOIN PROJECT_PARTICIPANT PT
+            ON P.PROJ_NO = PT.PROJ_NO
+        WHERE PT.EMP_ID = #{empId}
+          AND P.PROJ_STTS = '진행'
+        ORDER BY P.PROJ_END_DT
+    </select>
+
+
+    <!-- 제외자가 참여하는 일감들 중 혼자 맡고 있는지 세는 Count -->
+    <select id="removetask" parameterType="kr.or.ddit.vo.project.TaskVO" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+            FROM TASK T
+            INNER JOIN TASK_PARTICIPANT TP ON T.TASK_NO = TP.TASK_NO
+        WHERE T.PROJ_NO = #{projNo}
+            AND TP.EMP_ID = #{empId}
+            AND (SELECT COUNT(*) FROM TASK_PARTICIPANT TP2 WHERE TP2.TASK_NO = T.TASK_NO) = 1
+    </select>
+
+
+    <!-- 프로젝트 제외하기-->
+    <delete id="removeParticipant" parameterType="kr.or.ddit.vo.project.TaskVO">
+        DELETE FROM TASK_PARTICIPANT
+            WHERE EMP_ID = #{empId}
+        AND TASK_NO = #{taskNo}
+    </delete>
+
+    <delete id="removeProjectMember">
+        DELETE FROM PROJECT_PARTICIPANT
+            WHERE EMP_ID = #{empId}
+        AND  PROJ_NO = #{projNo}
+    </delete>
+
+    <insert id="addParticipant" parameterType="kr.or.ddit.vo.project.PrtpntVO">
+        INSERT INTO PROJECT_PARTICIPANT
+        (EMP_ID, PROJ_NO, PRTPNT_NM) VALUES (#{empId}, #{projNo}, #{prtpntNm})
+    </insert>
+
+    <!-- 프로젝트 이름 가져오기이 -->
+    <select id="projectname" parameterType="int" resultType="java.lang.String">
+        SELECT PROJ_TTL FROM PROJECT WHERE PROJ_NO = #{projNo}
+    </select>
+
+</mapper>

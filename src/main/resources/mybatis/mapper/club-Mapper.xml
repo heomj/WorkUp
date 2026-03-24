@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.ClubMapper">
+
+
+
+	<!-- 코드 재사용 -->
+	<sql id="where">
+		<if test="keyword != null and keyword != ''">
+			<if test="mode!=null and mode!=''"><if test="mode=='clubNtcTtl'">
+				AND    CLUB_NTC_TTL    LIKE '%' || #{keyword} || '%'
+			</if>
+				<if test="mode=='clubNtcCn'">
+					AND    CLUB_NTC_CN LIKE '%' || #{keyword} || '%'
+				</if>
+			</if>
+			<if test="mode==null or mode==''">AND  (
+				CLUB_NTC_TTL    LIKE '%' || #{keyword} || '%' OR
+				CLUB_NTC_CN     LIKE '%' || #{keyword} || '%'
+				)
+			</if>
+		</if>
+	</sql>
+
+
+
+	<!-- 동호회 회원 여부 확인 -->
+    <select id="getClubMember" parameterType="clubMemberVO" resultType="clubMemberVO">
+		SELECT *
+		FROM (
+				 SELECT *
+				 FROM CLUB_MEMBER
+				 WHERE EMP_ID = #{empId}
+				   AND CLUB_NO = #{clubNo}
+				   AND CLUB_MBR_WHDWL_DT IS NULL
+				 ORDER BY CLUB_MBR_NO DESC  )
+		WHERE ROWNUM = 1
+    </select>
+
+	<!-- 동호회 가입 -->
+	<insert id="join" parameterType="clubMemberVO">
+		INSERT INTO CLUB_MEMBER
+		(CLUB_MBR_NO, EMP_ID, CLUB_NO, CLUB_MBR_JOIN_DT, CLUB_MBR_WHDWL_DT, CLUB_MBR_AUTH, CLUB_JOIN_GRET)
+		VALUES(SEQ_CLUB_MEMBER_NO.NEXTVAL, #{empId}, #{clubNo}, SYSDATE, '', '회원', #{clubJoinGret})
+	</insert>
+
+	<!-- 동호회 회원 목록 가져오기 -->
+	<select id="getClubMemberList" resultType="clubMemberVO">
+			SELECT
+				CM.CLUB_MBR_NO,
+				CM.EMP_ID,
+				CM.CLUB_MBR_JOIN_DT,
+				CM.CLUB_MBR_WHDWL_DT,
+				CM.CLUB_MBR_AUTH,
+				CM.CLUB_JOIN_GRET,
+				FN_GET_AVATAR_NM(E.EMP_ID) AS AVT_SAVE_NM,
+				E.EMP_NM,
+				D.DEPT_NM,
+				E.EMP_JBGD
+			FROM
+				CLUB_MEMBER CM
+					INNER JOIN
+				EMPLOYEE E ON CM.EMP_ID = E.EMP_ID
+					LEFT OUTER JOIN
+				DEPARTMENT D ON E.DEPT_CD = D.DEPT_CD
+			WHERE
+				CM.CLUB_NO = #{clubNo}
+			  AND CM.CLUB_MBR_WHDWL_DT IS NULL
+			ORDER BY
+				CM.CLUB_MBR_AUTH DESC,
+				CM.CLUB_MBR_JOIN_DT ASC
+	</select>
+
+	<!-- 동호회 번호로 동호회 정보 가져오기 -->
+	<select id="getClubInfo" resultType="clubVO" parameterType="int">
+	SELECT *
+	FROM CLUB
+	WHERE CLUB_NO = #{clubNo}
+	</select>
+
+	<!-- 동호회 회원 수 카운트 -->
+	<select id="getClubMemberCount" parameterType="int" resultType="int">
+		SELECT COUNT(1)
+		FROM CLUB_MEMBER
+		WHERE CLUB_NO = #{clubNo}
+		AND CLUB_MBR_WHDWL_DT IS NULL
+	</select>
+
+	<!-- 탈퇴하기 -->
+	<update id="leaveClub" parameterType="clubMemberVO">
+		UPDATE CLUB_MEMBER
+		SET CLUB_MBR_WHDWL_DT = SYSDATE
+		WHERE CLUB_NO = #{clubNo}
+		  AND EMP_ID = #{empId}
+		  AND CLUB_MBR_WHDWL_DT IS NULL
+	</update>
+
+	<!-- 동호회 공지사항 개수 구하기 -->
+	<select id="getClubNoticeTotal" parameterType="clubNoticeVO" resultType="int">
+		SELECT COUNT(*)
+		FROM   CLUB_NOTICE
+		WHERE  CLUB_NO = #{clubNo}
+		  AND  CLUB_NTC_STTS = 'N'
+		<include refid="where"></include>
+	</select>
+
+
+	<!-- 공지사항 목록 불러오기 -->
+	<select id="clubNoticeListAxios" parameterType="clubNoticeVO" resultType="ClubNoticeVO">
+		SELECT T.*
+			FROM (
+				SELECT
+				ROW_NUMBER() OVER(ORDER BY N.CLUB_NTC_DT DESC) RNUM
+				, N.CLUB_NTC_NO
+				, N.CLUB_NO
+				, N.EMP_ID
+				, N.DEPT_CD
+				, N.CLUB_NTC_TTL
+				, N.CLUB_NTC_CN
+				, N.CLUB_NTC_CNT
+				, N.CLUB_NTC_DT
+				, N.CLUB_NTC_STTS
+				, E.EMP_NM
+				, E.EMP_JBGD
+				FROM CLUB_NOTICE N
+					INNER JOIN EMPLOYEE E ON E.EMP_ID = N.EMP_ID
+				WHERE N.CLUB_NO = #{clubNo}
+				  AND N.CLUB_NTC_STTS = 'N'
+
+				<if test="mode!=null and mode!=''"><!-- mode가 있다면 -->
+					<if test="mode=='clubNtcTtl'">
+						AND    N.CLUB_NTC_TTL    LIKE '%' || #{keyword} || '%'
+					</if>
+					<if test="mode=='clubNtcCn'">
+						AND    N.CLUB_NTC_CN LIKE '%' || #{keyword} || '%'
+					</if>
+				</if>
+				<if test="mode==null or mode==''"><!-- mode가 없다면 -->
+					AND  (
+					N.CLUB_NTC_TTL    LIKE '%' || #{keyword} || '%' OR
+					N.CLUB_NTC_CN      LIKE '%' || #{keyword} || '%'
+					)
+				</if>
+
+				ORDER BY RNUM ASC) T
+		WHERE RNUM BETWEEN (#{currentPage} * 10) - (10 - 1) AND (#{currentPage} * 10)
+	</select>
+
+	<!-- 동호회 공지사항 조회수 ++ -->
+	<update id="plusClubNoticeCnt" parameterType="int">
+		UPDATE CLUB_NOTICE
+		SET CLUB_NTC_CNT = CLUB_NTC_CNT + 1
+		WHERE CLUB_NTC_NO = #{clubNtcNo}
+	</update>
+
+	<!-- 동호회 공지사항 상세 내용 가져오기 -->
+	<select id="clubNoticeDetail" parameterType="int" resultType="ClubNoticeVO">
+		SELECT
+			  N.CLUB_NTC_NO
+			, N.CLUB_NTC_TTL
+			, N.CLUB_NTC_CN
+			, N.CLUB_NTC_CNT
+			, N.CLUB_NTC_DT
+		    , FN_GET_AVATAR_NM(E.EMP_ID) AS AVT_SAVE_NM
+			, E.EMP_NM
+		    , E.EMP_JBGD
+			, D.DEPT_NM
+		FROM CLUB_NOTICE N
+				 INNER JOIN EMPLOYEE E ON E.EMP_ID = N.EMP_ID
+				 LEFT OUTER JOIN DEPARTMENT D ON  D.DEPT_CD = E.DEPT_CD
+		WHERE N.CLUB_NTC_NO = #{clubNtcNo}
+	</select>
+
+	<!-- 동호회 공지사항 등록 -->
+	<insert id="noticeWrite" parameterType="ClubNoticeVO">
+		INSERT INTO CLUB_NOTICE
+		(CLUB_NTC_NO, CLUB_NO, EMP_ID, DEPT_CD, CLUB_NTC_TTL, CLUB_NTC_CN, CLUB_NTC_CNT, CLUB_NTC_DT, CLUB_NTC_STTS)
+		VALUES(SEQ_CLUB_NOTICE_NO.NEXTVAL, #{clubNo}, #{empId}, 0, #{clubNtcTtl}, #{clubNtcCn}, 0, SYSDATE, 'N')
+	</insert>
+
+	<!-- 동호회 공지사항 삭제 -->
+	<update id="noticeDelete" parameterType="int">
+		UPDATE CLUB_NOTICE
+		SET CLUB_NTC_STTS = 'Y'
+		WHERE CLUB_NTC_NO = #{clubNtcNo}
+	</update>
+
+	<!-- 포토갤러리 작성하기 -->
+	<insert id="galleryWrite" parameterType="clubBoradVO">
+		INSERT INTO CLUB_BOARD
+		( CLUB_BBS_NO
+		, CLUB_NO
+		, CLUB_MBR_NO
+		, DEPT_CD
+		, CLUB_BBS_TTL
+		, CLUB_BBS_CN
+		, CLUB_BBS_CNT
+		, CLUB_BBS_DT
+		, CLUB_BBS_STTS
+		, CLUB_BBS_FILE_NO
+		, CLUB_BBS_DCL_YN)
+		VALUES ( SEQ_CLUB_BOARD_NO.NEXTVAL
+			   , #{clubNo}
+			   , #{clubMbrNo}
+			   , #{deptCd}
+			   , #{clubBbsTtl}
+			   , #{clubBbsCn}
+			   , 0
+			   , SYSDATE
+			   , 'N'
+			   , #{clubBbsFileNo}
+			   , 'N')
+	</insert>
+
+	<!-- 동호회 포토갤러리 개수 구하기 -->
+	<select id="getClubBoardTotal" parameterType="clubBoradVO" resultType="int">
+		SELECT COUNT(*)
+		FROM CLUB_BOARD B
+		INNER JOIN EMPLOYEE E ON E.EMP_ID = B.CLUB_MBR_NO
+		WHERE B.CLUB_NO = #{clubNo}
+		AND B.CLUB_BBS_STTS = 'N'
+
+		<if test="keyword != null and keyword != ''">
+			AND (
+			B.CLUB_BBS_TTL LIKE '%' || #{keyword} || '%' OR
+			B.CLUB_BBS_CN  LIKE '%' || #{keyword} || '%' OR
+			E.EMP_NM       LIKE '%' || #{keyword} || '%'
+			)
+		</if>
+	</select>
+
+
+	<!-- 동호회 포토갤러리 목록 불러오기 (6개씩) -->
+	<select id="clubBoardListAxios" parameterType="clubBoradVO" resultType="clubBoradVO">
+		SELECT T.*
+		FROM (
+		SELECT
+		ROW_NUMBER() OVER(ORDER BY B.CLUB_BBS_DT DESC) RNUM
+		, B.CLUB_BBS_NO
+		, B.CLUB_NO
+		, B.CLUB_MBR_NO
+		, B.DEPT_CD
+		, B.CLUB_BBS_TTL
+		, B.CLUB_BBS_CNT
+		, B.CLUB_BBS_DT
+		, B.CLUB_BBS_FILE_NO
+		, E.EMP_NM
+		, E.EMP_JBGD
+		, (
+			SELECT FD.FILE_DTL_PATH
+			FROM FILE_DETAIL FD
+			WHERE FD.FILE_ID = B.CLUB_BBS_FILE_NO
+			AND ROWNUM = 1
+		) AS THUMBNAIL_PATH
+		, (
+			SELECT COUNT(*)
+			FROM FILE_DETAIL FD
+			WHERE FD.FILE_ID = B.CLUB_BBS_FILE_NO
+		) AS FILE_CNT
+		FROM CLUB_BOARD B
+			INNER JOIN EMPLOYEE E ON E.EMP_ID = B.CLUB_MBR_NO
+		WHERE B.CLUB_NO = #{clubNo}
+		AND B.CLUB_BBS_STTS = 'N'
+
+		<if test="keyword != null and keyword != ''">
+			AND (
+			B.CLUB_BBS_TTL LIKE '%' || #{keyword} || '%' OR
+			B.CLUB_BBS_CN  LIKE '%' || #{keyword} || '%' OR
+			E.EMP_NM       LIKE '%' || #{keyword} || '%'
+			)
+		</if>
+		) T
+		WHERE RNUM BETWEEN (#{currentPage} * 6) - (5) AND (#{currentPage} * 6)
+	</select>
+
+
+	<!-- 동호회 포토갤러리 조회수 ++ -->
+	<update id="plusClubBoardCnt" parameterType="int">
+		UPDATE CLUB_BOARD
+		SET CLUB_BBS_CNT = CLUB_BBS_CNT + 1
+		WHERE CLUB_BBS_NO = #{clubBbsNo}
+	</update>
+
+	<!-- 포토갤러리 사진 리스트 가져오기 위한.. -->
+	<resultMap id="clubBoardDetailMap" type="clubBoradVO">
+		<!-- 메인 게시글 정보 -->
+		<id property="clubBbsNo" column="CLUB_BBS_NO" />
+		<result property="clubNo" column="CLUB_NO" />
+		<result property="clubMbrNo" column="CLUB_MBR_NO" />
+		<result property="clubBbsTtl" column="CLUB_BBS_TTL" />
+		<result property="clubBbsCn" column="CLUB_BBS_CN" />
+		<result property="clubBbsCnt" column="CLUB_BBS_CNT" />
+		<result property="clubBbsDt" column="CLUB_BBS_DT" />
+
+		<!-- 작성자 정보 -->
+		<result property="empNm" column="EMP_NM" />
+		<result property="empJbgd" column="EMP_JBGD" />
+		<result property="deptCd" column="DEPT_CD" />
+		<result property="deptNm" column="DEPT_NM" />
+		<result property="avtSaveNm" column="AVT_SAVE_NM" />
+
+		<!-- 첨부파일 리스트 -->
+		<collection property="fileList" ofType="fileDetailVO">
+			<id property="fileDtlId" column="FILE_DTL_ID" />
+			<result property="fileId" column="FILE_ID" />
+			<result property="fileDtlPath" column="FILE_DTL_PATH" />
+			<result property="fileDtlSaveNm" column="FILE_DTL_SAVE_NM" />
+		</collection>
+	</resultMap>
+
+	<!-- 동호회 포토갤러리 상세 가져오기 -->
+	<select id="clubBoardDetail" parameterType="int" resultMap="clubBoardDetailMap">
+		SELECT
+			B.CLUB_BBS_NO,
+			B.CLUB_NO,
+			B.CLUB_MBR_NO,
+			B.CLUB_BBS_TTL,
+			B.CLUB_BBS_CN,
+			B.CLUB_BBS_CNT,
+			B.CLUB_BBS_DT,
+			E.EMP_NM,
+			E.EMP_JBGD,
+			B.DEPT_CD,
+			FN_GET_DEPT_NM(B.DEPT_CD) AS DEPT_NM,
+			FN_GET_AVATAR_NM(E.EMP_ID) AS AVT_SAVE_NM,
+			FD.FILE_DTL_ID,
+			FD.FILE_ID,
+			FD.FILE_DTL_PATH,
+			FD.FILE_DTL_SAVE_NM
+		FROM CLUB_BOARD B
+				 INNER JOIN EMPLOYEE E ON B.CLUB_MBR_NO = E.EMP_ID
+				 LEFT OUTER JOIN FILE_DETAIL FD ON B.CLUB_BBS_FILE_NO = FD.FILE_ID
+		WHERE B.CLUB_BBS_NO = #{clubBbsNo}
+	</select>
+
+	<!-- 동호회 공지사항 삭제 -->
+	<update id="galleryDelete" parameterType="int">
+		UPDATE CLUB_BOARD
+		SET CLUB_BBS_STTS = 'Y'
+		WHERE CLUB_BBS_NO = #{clubBbsNo}
+	</update>
+
+
+	<!--(관리자) 동호회 목록 가져오기-->
+	<select id="getClubList" resultType="kr.or.ddit.vo.ClubVO">
+		SELECT
+			C.CLUB_NO AS clubNo
+			 , C.CLUB_NM AS clubNm
+
+			 , E.EMP_NM || '(' || E.EMP_ID || ')' AS presidentNm
+
+			 , TO_CHAR(C.CLUB_BGNG_DT, 'YYYY-MM-DD') AS createDt
+
+			 , (SELECT COUNT(*) FROM CLUB_MEMBER CM_SUB WHERE CM_SUB.CLUB_NO = C.CLUB_NO) AS memberTotalCnt
+			 , (SELECT COUNT(*) FROM CLUB_MEMBER CM_SUB WHERE CM_SUB.CLUB_NO = C.CLUB_NO AND CM_SUB.CLUB_MBR_WHDWL_DT IS NULL) AS memberActiveCnt
+			 , (SELECT COUNT(*) FROM CLUB_MEMBER CM_SUB WHERE CM_SUB.CLUB_NO = C.CLUB_NO AND CM_SUB.CLUB_MBR_WHDWL_DT IS NOT NULL) AS memberWhdwlCnt
+
+			 , (SELECT COUNT(*) FROM CLUB_NOTICE N WHERE N.CLUB_NO = C.CLUB_NO) AS noticeTotalCnt
+			 , (SELECT COUNT(*) FROM CLUB_NOTICE N WHERE N.CLUB_NO = C.CLUB_NO AND N.CLUB_NTC_STTS = 'N') AS noticeActiveCnt
+			 , (SELECT COUNT(*) FROM CLUB_NOTICE N WHERE N.CLUB_NO = C.CLUB_NO AND N.CLUB_NTC_STTS = 'Y') AS noticeDelCnt
+
+			 , (SELECT COUNT(*) FROM CLUB_BOARD B WHERE B.CLUB_NO = C.CLUB_NO) AS galleryTotalCnt
+			 , (SELECT COUNT(*) FROM CLUB_BOARD B WHERE B.CLUB_NO = C.CLUB_NO AND B.CLUB_BBS_STTS = 'N') AS galleryActiveCnt
+			 , (SELECT COUNT(*) FROM CLUB_BOARD B WHERE B.CLUB_NO = C.CLUB_NO AND B.CLUB_BBS_STTS = 'Y') AS galleryDelCnt
+
+		FROM CLUB C
+
+				 LEFT OUTER JOIN CLUB_MEMBER CM
+								 ON C.CLUB_NO = CM.CLUB_NO
+									 AND CM.CLUB_MBR_WHDWL_DT IS NULL
+									 AND CM.CLUB_MBR_AUTH = '회장'
+
+				 LEFT OUTER JOIN EMPLOYEE E
+								 ON CM.EMP_ID = E.EMP_ID
+
+		ORDER BY C.CLUB_NO ASC
+	</select>
+
+
+	<!--(관리자) 월별 게시글 차트 -->
+	<select id="getClubMonthlyActivity" resultType="map">
+    <![CDATA[
+		SELECT
+			C.CLUB_NM AS "clubName",
+			M.MONTH_STR AS "monthStr",
+			COUNT(P.CLUB_NO) AS "postCount"
+		FROM CLUB C
+				 CROSS JOIN (
+			SELECT
+				TO_CHAR(ADD_MONTHS(SYSDATE, -5 + LEVEL - 1), 'MM') || '월' AS MONTH_STR,
+				TO_CHAR(ADD_MONTHS(SYSDATE, -5 + LEVEL - 1), 'YYYY-MM') AS MONTH_KEY
+			FROM DUAL
+				CONNECT BY LEVEL <= 6
+		) M
+				 LEFT JOIN (
+			SELECT CLUB_NO, TO_CHAR(CLUB_NTC_DT, 'YYYY-MM') AS POST_DT
+			FROM CLUB_NOTICE
+			WHERE CLUB_NTC_STTS = 'N'
+			UNION ALL
+			SELECT CLUB_NO, TO_CHAR(CLUB_BBS_DT, 'YYYY-MM') AS POST_DT
+			FROM CLUB_BOARD
+			WHERE CLUB_BBS_STTS = 'N'
+		) P ON C.CLUB_NO = P.CLUB_NO AND M.MONTH_KEY = P.POST_DT
+		GROUP BY C.CLUB_NM, M.MONTH_KEY, M.MONTH_STR
+		ORDER BY C.CLUB_NM, M.MONTH_KEY
+		]]>
+</select>
+
+
+
+	<!-- 대시보드에 최근 포토갤러리 띄우기 -->
+	<select id="getRecentClubPhotos" resultType="kr.or.ddit.vo.ClubBoradVO">
+    <![CDATA[
+		SELECT *
+		FROM (
+			 SELECT
+				 B.CLUB_NO AS "clubNo",
+				 C.CLUB_NM AS "clubNm",
+				 B.CLUB_BBS_TTL AS "clubBbsTtl",
+				 D.FILE_DTL_PATH AS "thumbnailSaveNm"
+			 FROM CLUB_BOARD B
+					  INNER JOIN CLUB C ON B.CLUB_NO = C.CLUB_NO
+					  INNER JOIN FILE_DETAIL D ON B.CLUB_BBS_FILE_NO = D.FILE_ID
+			 WHERE B.CLUB_BBS_FILE_NO IS NOT NULL
+			   AND B.CLUB_BBS_STTS = 'N'
+			   AND D.FILE_DTL_DEL_YN = 'N'
+			   AND (D.FILE_DTL_EXT IN ('jpg', 'jpeg', 'png', 'gif')
+				 OR D.FILE_DTL_EXT IN ('JPG', 'JPEG', 'PNG', 'GIF'))
+			 ORDER BY B.CLUB_BBS_DT DESC
+			 )
+		WHERE ROWNUM <= 10
+		]]>
+	</select>
+
+	<!-- (관리자)동아리 회원 목록 -->
+	<select id="clubMemberList" resultType="clubMemberVO">
+		SELECT
+			A.CLUB_MBR_NO
+			 , B.EMP_NM
+			 , C.CLUB_NM
+			 , A.CLUB_MBR_AUTH
+			 , A.CLUB_MBR_JOIN_DT
+			 , A.CLUB_MBR_WHDWL_DT
+			 , A.EMP_ID
+			 , A.CLUB_NO
+			, FN_GET_DEPT_NM(B.DEPT_CD) AS DEPT_NM
+		FROM CLUB_MEMBER A
+				 LEFT JOIN EMPLOYEE B ON A.EMP_ID = B.EMP_ID
+				 LEFT JOIN CLUB C ON A.CLUB_NO = C.CLUB_NO
+		ORDER BY A.CLUB_MBR_JOIN_DT DESC
+	</select>
+
+	<!--(관리자) 동호회 공지사항 목록 -->
+	<select id="clubNoticeList" resultType="clubNoticeVO">
+		SELECT
+			A.CLUB_NTC_NO
+			 , C.CLUB_NM
+			 , A.CLUB_NTC_TTL
+			 , B.EMP_NM
+			 , A.CLUB_NTC_DT
+			 , A.CLUB_NTC_STTS
+			 , A.CLUB_NTC_CNT
+			 , A.EMP_ID
+			 , A.CLUB_NO
+			 , FN_GET_DEPT_NM(B.DEPT_CD) AS DEPT_NM
+		FROM CLUB_NOTICE A
+				 LEFT JOIN EMPLOYEE B ON A.EMP_ID = B.EMP_ID
+				 LEFT JOIN CLUB C ON A.CLUB_NO = C.CLUB_NO
+		ORDER BY A.CLUB_NTC_NO DESC
+	</select>
+
+	<!-- 동호회 포토 갤러리 목록 -->
+	<select id="clubGalleryList" resultType="clubBoradVO">
+		SELECT
+			A.CLUB_BBS_NO
+			 , C.CLUB_NM
+			 , A.CLUB_BBS_TTL
+			 , B.EMP_NM
+			 , A.CLUB_BBS_DT
+			 , A.CLUB_BBS_STTS
+			 , A.CLUB_BBS_CNT
+			 , A.CLUB_MBR_NO
+			 , A.CLUB_NO
+			 , FN_GET_DEPT_NM(B.DEPT_CD) AS DEPT_NM
+		FROM CLUB_BOARD A
+				 LEFT JOIN CLUB_MEMBER M ON A.CLUB_MBR_NO = M.EMP_ID
+				 LEFT JOIN EMPLOYEE B ON A.CLUB_MBR_NO = B.EMP_ID
+				 LEFT JOIN CLUB C ON A.CLUB_NO = C.CLUB_NO
+		ORDER BY A.CLUB_BBS_NO DESC
+	</select>
+
+
+
+
+
+
+
+
+</mapper>

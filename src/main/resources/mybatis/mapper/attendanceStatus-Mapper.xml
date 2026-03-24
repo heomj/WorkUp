@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.AttendanceStatusMapper">
+
+
+
+    <!--회원의 월별 상태가져오기
+    public Map<String, Object> getDashboardSummary(int empId)-->
+    <select id="getDashboardSummary" parameterType="int" resultType="map">
+        SELECT
+        (SELECT COUNT(*)
+        FROM ATTENDANCE
+        WHERE EMP_ID = #{empId}
+        AND ATT_LATE_YN = 'Y'
+        AND TO_CHAR(ATT_WORK_DT, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM')) as ATT_LATE_CT,
+
+        (SELECT NVL(SUM(ATT_DAY_TIME), 0)
+        FROM ATTENDANCE
+        WHERE EMP_ID = #{empId}
+        AND TO_CHAR(ATT_WORK_DT, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM')) as ATT_MON_TIME,
+
+        (SELECT ANN_LEAVE_REMAIN
+        FROM ANNUAL_LEAVE
+        WHERE EMP_ID = #{empId}
+        AND ANN_LEAVE_YEAR = TO_CHAR(SYSDATE, 'YYYY')) as ANN_LEAVE_REMAIN,
+
+        (SELECT COUNT(*)
+        FROM APRV_VCT_DOC
+        WHERE EMP_ID = #{empId}
+        AND VCT_STTS = '결재완료'
+        AND (TO_CHAR(VCT_DOC_BGNG, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM')
+        OR TO_CHAR(VCT_DOC_END, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM'))) as VCT_COUNT,
+
+        (SELECT COUNT(*)
+        FROM APRV_BZTRP_DOC
+        WHERE EMP_ID = #{empId}
+        AND BZTRP_STTS = '결재완료'
+        AND (TO_CHAR(BZTRP_START, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM')
+        OR TO_CHAR(BZTRP_END, 'YYYY-MM') = TO_CHAR(SYSDATE, 'YYYY-MM'))) as BZTRP_COUNT
+
+        FROM DUAL
+    </select>
+</mapper>

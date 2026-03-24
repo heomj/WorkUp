@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.ReserveMapper">
+
+	<select id="getAllReserveList" resultType="map">
+		SELECT 'ROOM' AS TYPE
+		, TO_CHAR(R.RM_RSVT_NO) AS RES_ID
+		, R.EMP_ID AS EMP_ID
+		, E.EMP_NM AS EMP_NM
+		, M.RM_NM AS TITLE
+		, TO_CHAR(R.RM_NO) AS REF_NO
+		, R.RM_RSVT_EXPLN AS EXPLN
+		, CASE 
+		    WHEN R.APRV_STTS = 'REJECTED' THEN 'REJECTED'
+		    WHEN R.APRV_STTS = 'CONFIRMED' THEN 'CONFIRMED'
+		    WHEN R.RM_RSVT_APRV_DT IS NOT NULL THEN 'CONFIRMED'
+		    ELSE 'WAITING' 
+		  END AS STTS
+		, TO_CHAR(R.RM_RSVT_BGNG_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS "START"
+		, TO_CHAR(R.RM_RSVT_END_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS "END"
+		FROM ROOM_RESERVATION R
+		LEFT OUTER JOIN EMPLOYEE E ON R.EMP_ID = E.EMP_ID
+		LEFT OUTER JOIN MEETING_ROOM M ON R.RM_NO = M.RM_NO
+		UNION ALL
+		SELECT 'FIXTURE' AS TYPE
+		, TO_CHAR(R.FIXT_RSVT_NO) AS RES_ID
+		, R.EMP_ID AS EMP_ID
+		, E.EMP_NM AS EMP_NM
+		, F.FIXT_NM AS TITLE
+		, TO_CHAR(R.FIXT_NO) AS REF_NO
+		, R.FIXT_RSVT_EXPLN AS EXPLN
+		, CASE 
+		    WHEN R.APRV_STTS = 'REJECTED' THEN 'REJECTED'
+		    WHEN R.APRV_STTS = 'CONFIRMED' THEN 'CONFIRMED'
+		    WHEN R.FIXT_RSVT_APRV_DT IS NOT NULL THEN 'CONFIRMED'
+		    ELSE 'WAITING' 
+		  END AS STTS
+		, TO_CHAR(R.FIXT_RSVT_BGNG_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS "START"
+		, TO_CHAR(R.FIXT_RSVT_END_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS "END"
+		FROM FIXTURE_RESERVATION R
+		LEFT OUTER JOIN EMPLOYEE E ON R.EMP_ID = E.EMP_ID
+		LEFT OUTER JOIN FIXTURE F ON R.FIXT_NO = F.FIXT_NO
+	</select>
+	
+	<select id="getMyTeamLeader" parameterType="string"
+		resultType="map">
+		SELECT T.EMP_ID AS "empId"
+		, T.EMP_NM AS "empNm"
+		, T.EMP_JBGD
+		AS "empJbgd"
+		, D.DEPT_NM AS "deptNm"
+		FROM EMPLOYEE ME
+		JOIN EMPLOYEE T ON
+		ME.DEPT_CD = T.DEPT_CD
+		LEFT OUTER JOIN DEPARTMENT D ON T.DEPT_CD =
+		D.DEPT_CD
+		WHERE ME.EMP_ID = #{empId}
+		AND T.EMP_JBGD = '팀장'
+		AND T.EMP_STTS
+		= 'Y'
+		AND ROWNUM = 1
+	</select>
+
+	<select id="getMyReserveList" parameterType="string" resultType="reserveVO">
+	    SELECT 'ROOM' AS type
+	    , R.RM_RSVT_NO AS resId
+	    , M.RM_NM AS title
+	    , R.RM_RSVT_EXPLN AS expln
+	    , TO_CHAR(R.RM_RSVT_BGNG_DT, 'YYYY-MM-DD HH24:MI') AS bgngDt
+	    , TO_CHAR(R.RM_RSVT_END_DT, 'YYYY-MM-DD HH24:MI') AS endDt
+	    , CASE 
+	        WHEN R.APRV_STTS = 'REJECTED' THEN '반려됨'
+	        WHEN R.APRV_STTS = 'CONFIRMED' THEN '예약 확정'
+	        WHEN R.RM_RSVT_APRV_DT IS NOT NULL THEN '예약 확정'
+	        ELSE '승인 대기' 
+	      END AS stts
+	    , TO_CHAR(R.RM_RSVT_APRV_DT, 'YYYY-MM-DD HH24:MI') AS aprvDt
+	    , NULL AS fixtCat 
+	    FROM ROOM_RESERVATION R
+	    JOIN MEETING_ROOM M ON R.RM_NO = M.RM_NO
+	    WHERE R.EMP_ID = #{empId}
+	    
+	    UNION ALL
+	    
+	    SELECT 'FIXTURE' AS type
+	    , FR.FIXT_RSVT_NO AS resId 
+	    , F.FIXT_NM AS title
+	    , FR.FIXT_RSVT_EXPLN AS expln
+	    , TO_CHAR(FR.FIXT_RSVT_BGNG_DT, 'YYYY-MM-DD HH24:MI') AS bgngDt
+	    , TO_CHAR(FR.FIXT_RSVT_END_DT, 'YYYY-MM-DD HH24:MI') AS endDt
+	    , CASE 
+	        WHEN FR.APRV_STTS = 'REJECTED' THEN '반려됨'
+	        WHEN FR.APRV_STTS = 'CONFIRMED' THEN '예약 확정'
+	        WHEN FR.FIXT_RSVT_APRV_DT IS NOT NULL THEN '예약 확정'
+	        ELSE '승인 대기' 
+	      END AS stts
+	    , TO_CHAR(FR.FIXT_RSVT_APRV_DT,'YYYY-MM-DD HH24:MI') AS aprvDt
+	    , F.FIXT_CAT AS fixtCat 
+	    FROM FIXTURE_RESERVATION FR
+	    JOIN FIXTURE F ON FR.FIXT_NO = F.FIXT_NO
+	    WHERE FR.EMP_ID = #{empId}
+	</select>
+
+	<select id="getMtgRoomList" resultType="reserveVO">
+		SELECT RM_NO AS rmNo,
+		RM_NM AS rmNm, RM_PLC AS rmPlc, RM_ACTC_NOPE AS rmActcNope, RM_STTS AS rmStts,
+		TO_CHAR(RM_STTS_BGNG_DT, 'YYYY-MM-DD') AS sttsBgngDt,
+		TO_CHAR(RM_STTS_END_DT, 'YYYY-MM-DD') AS sttsEndDt
+		FROM MEETING_ROOM
+		ORDER BY RM_NO ASC
+	</select>
+	
+	<select id="getFixtList" resultType="reserveVO">
+		SELECT F.FIXT_NO AS fixtNo,
+		F.FIXT_CAT AS fixtCat,
+		F.FIXT_NM AS fixtNm,
+		F.FIXT_QTY AS fixtQty,
+		F.FIXT_STTS AS fixtStts,
+		CASE
+		WHEN FM.FIXT_MD_NM IS NOT NULL AND F.ASSET_NO IS NOT NULL THEN FM.FIXT_MD_NM || ' [' || F.ASSET_NO || ']'
+		ELSE FM.FIXT_MD_NM END AS fixtMdNm,
+		F.ASSET_NO AS assetNo,
+		TO_CHAR(F.FIXT_STTS_BGNG_DT, 'YYYY-MM-DD') AS sttsBgngDt,
+		TO_CHAR(F.FIXT_STTS_END_DT, 'YYYY-MM-DD') AS sttsEndDt
+		FROM FIXTURE F
+		LEFT OUTER JOIN FIXTURE_MODEL FM ON F.FIXT_NO = FM.FIXT_NO
+		ORDER BY F.FIXT_CAT, F.FIXT_NO ASC
+	</select>
+
+	<!-- 🔥 반려된 내역은 예약 가능 시간에 표출하지 않도록 방어 코드 추가 🔥 -->
+	<select id="getReservedTimes" parameterType="map" resultType="string">
+		SELECT TO_CHAR(RM_RSVT_BGNG_DT, 'HH24:MI') || '-' ||
+		TO_CHAR(RM_RSVT_END_DT, 'HH24:MI')
+		FROM ROOM_RESERVATION
+		WHERE RM_NO = #{rmNo}
+		AND (APRV_STTS IS NULL OR APRV_STTS != 'REJECTED')
+		AND TO_CHAR(RM_RSVT_BGNG_DT, 'YYYY-MM-DD') = #{date}
+	</select>
+
+	<!-- 🔥 반려된 내역은 중복 검사에서 제외하여 다른 사람이 예약 가능하도록 방어 코드 추가 🔥 -->
+	<select id="checkRoomOverlap" resultType="int">
+		SELECT COUNT(*) FROM ROOM_RESERVATION
+		WHERE RM_NO = #{rmNo}
+		AND (APRV_STTS IS NULL OR APRV_STTS != 'REJECTED')
+		AND
+		(RM_RSVT_BGNG_DT &lt; TO_DATE(REPLACE(#{endDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI')
+		AND RM_RSVT_END_DT &gt; TO_DATE(REPLACE(#{bgngDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'))
+		<if test="resId != null and resId != ''">
+			AND RM_RSVT_NO != #{resId}
+		</if>
+	</select>
+
+	<!-- 🔥 반려된 내역은 중복 검사에서 제외하여 다른 사람이 예약 가능하도록 방어 코드 추가 🔥 -->
+	<select id="checkFixtOverlap" resultType="int">
+		SELECT COUNT(*) FROM FIXTURE_RESERVATION
+		WHERE FIXT_NO = #{fixtNo}
+		AND (APRV_STTS IS NULL OR APRV_STTS != 'REJECTED')
+		AND
+		(FIXT_RSVT_BGNG_DT &lt; TO_DATE(REPLACE(#{endDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI')
+		AND FIXT_RSVT_END_DT &gt; TO_DATE(REPLACE(#{bgngDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'))
+		<if test="resId != null and resId != ''">
+			AND FIXT_RSVT_NO != #{resId}
+		</if>
+	</select>
+
+	<insert id="insertMtgRoomReserve" parameterType="reserveVO">
+		INSERT INTO
+		ROOM_RESERVATION
+		(RM_RSVT_NO, RM_NO, EMP_ID, RM_RSVT_EXPLN,
+		RM_RSVT_BGNG_DT, RM_RSVT_END_DT, RM_RSVT_APRV_ID)
+		VALUES
+		((SELECT NVL(MAX(RM_RSVT_NO), 0) + 1 FROM ROOM_RESERVATION),
+		#{rmNo}, #{empId}, #{expln},
+		TO_DATE(REPLACE(#{bgngDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		TO_DATE(REPLACE(#{endDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		#{aprvId, jdbcType=VARCHAR})
+	</insert>
+
+	<update id="updateMtgRoomReserve" parameterType="reserveVO">
+		UPDATE ROOM_RESERVATION
+		SET RM_NO = #{rmNo},
+		RM_RSVT_EXPLN = #{expln},
+		RM_RSVT_BGNG_DT = TO_DATE(REPLACE(#{bgngDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		RM_RSVT_END_DT = TO_DATE(REPLACE(#{endDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		RM_RSVT_APRV_ID = #{aprvId, jdbcType=VARCHAR}
+		WHERE RM_RSVT_NO = #{resId}
+	</update>
+
+	<delete id="deleteMtgRoomReserve" parameterType="string">
+		DELETE FROM ROOM_RESERVATION WHERE RM_RSVT_NO = #{resId}
+	</delete>
+
+	<insert id="insertFixtReserve" parameterType="reserveVO">
+		INSERT INTO
+		FIXTURE_RESERVATION
+		(FIXT_RSVT_NO, FIXT_NO, EMP_ID, FIXT_RSVT_EXPLN,
+		FIXT_RSVT_BGNG_DT, FIXT_RSVT_END_DT, FIXT_RSVT_APRV_ID)
+		VALUES
+		((SELECT NVL(MAX(FIXT_RSVT_NO), 0) + 1 FROM FIXTURE_RESERVATION),
+		#{fixtNo}, #{empId}, #{expln},
+		TO_DATE(REPLACE(#{bgngDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		TO_DATE(REPLACE(#{endDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		#{aprvId, jdbcType=VARCHAR})
+	</insert>
+
+	<update id="updateFixtReserve" parameterType="reserveVO">
+		UPDATE FIXTURE_RESERVATION
+		SET FIXT_NO = #{fixtNo},
+		FIXT_RSVT_EXPLN = #{expln},
+		FIXT_RSVT_BGNG_DT = TO_DATE(REPLACE(#{bgngDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		FIXT_RSVT_END_DT = TO_DATE(REPLACE(#{endDt}, 'T', ' '), 'YYYY-MM-DD HH24:MI'),
+		FIXT_RSVT_APRV_ID = #{aprvId, jdbcType=VARCHAR}
+		WHERE FIXT_RSVT_NO = #{resId}
+	</update>
+
+	<delete id="deleteFixtReserve" parameterType="string">
+		DELETE FROM FIXTURE_RESERVATION WHERE FIXT_RSVT_NO = #{resId}
+	</delete>
+
+	<update id="decreaseFixtQty" parameterType="int">
+		UPDATE FIXTURE
+		SET FIXT_QTY = FIXT_QTY - 1
+		WHERE FIXT_NO = #{fixtNo} AND FIXT_QTY > 0
+	</update>
+
+	<select id="getPendingApprovalList" resultType="kr.or.ddit.vo.ReserveVO">
+		SELECT 'ROOM' AS type
+		, TO_CHAR(R.RM_RSVT_NO) AS resId
+		, TO_CHAR(R.EMP_ID) AS empId
+		, E.EMP_NM AS empNm
+		, M.RM_NM AS title
+		, TO_CHAR(R.RM_NO) AS refNo
+		, R.RM_RSVT_EXPLN AS expln
+		, 'WAITING' AS stts
+		, TO_CHAR(R.RM_RSVT_BGNG_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS bgngDt
+		, TO_CHAR(R.RM_RSVT_END_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS endDt
+		, NULL AS fixtCat
+		FROM ROOM_RESERVATION R
+		LEFT OUTER JOIN EMPLOYEE E ON R.EMP_ID = E.EMP_ID
+		LEFT OUTER JOIN MEETING_ROOM M ON R.RM_NO = M.RM_NO
+		WHERE R.RM_RSVT_APRV_DT IS NULL
+		AND TO_CHAR(R.RM_RSVT_APRV_ID) = #{empId}
+		UNION ALL
+		SELECT 'FIXTURE' AS type
+		, TO_CHAR(R.FIXT_RSVT_NO) AS resId
+		, TO_CHAR(R.EMP_ID) AS empId
+		, E.EMP_NM AS empNm
+		, F.FIXT_NM AS title
+		, TO_CHAR(R.FIXT_NO) AS refNo
+		, R.FIXT_RSVT_EXPLN AS expln
+		, 'WAITING' AS stts
+		, TO_CHAR(R.FIXT_RSVT_BGNG_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS bgngDt
+		, TO_CHAR(R.FIXT_RSVT_END_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS endDt
+		, F.FIXT_CAT AS fixtCat FROM FIXTURE_RESERVATION R
+		LEFT OUTER JOIN EMPLOYEE E ON R.EMP_ID = E.EMP_ID
+		LEFT OUTER JOIN FIXTURE F ON R.FIXT_NO = F.FIXT_NO
+		WHERE R.FIXT_RSVT_APRV_DT IS NULL
+		AND TO_CHAR(R.FIXT_RSVT_APRV_ID) = #{empId}
+	</select>
+
+	<!-- 🔥 승인/반려 시 컨트롤러가 보낸 파라미터(status)를 추가 컬럼에 업데이트 하도록 수정 🔥 -->
+	<update id="approveReserve" parameterType="map">
+		<choose>
+			<when test="type == 'ROOM'">
+				UPDATE ROOM_RESERVATION
+				SET RM_RSVT_APRV_DT = SYSDATE
+				<if test="status != null">
+				    , APRV_STTS = #{status}
+				</if>
+				WHERE RM_RSVT_NO = #{resId}
+			</when>
+			<otherwise>
+				UPDATE FIXTURE_RESERVATION
+				SET FIXT_RSVT_APRV_DT = SYSDATE
+				<if test="status != null">
+				    , APRV_STTS = #{status}
+				</if>
+				WHERE FIXT_RSVT_NO = #{resId}
+			</otherwise>
+		</choose>
+	</update>
+
+	<select id="getAdminRoomList" resultType="reserveVO">
+		SELECT RM_NO AS rmNo,
+		RM_NM AS rmNm,
+		RM_PLC AS rmPlc,
+		RM_ACTC_NOPE AS rmActcNope,
+		CASE
+		WHEN RM_STTS = '01' THEN '사용가능'
+		WHEN RM_STTS = '02' THEN '사용불가'
+		WHEN RM_STTS = '03' THEN '수리중'
+		WHEN RM_STTS = '04' THEN '용도변경'
+		ELSE '알수없음'
+		END AS rmStts,
+		TO_CHAR(RM_STTS_BGNG_DT, 'YYYY-MM-DD') AS sttsBgngDt,
+		TO_CHAR(RM_STTS_END_DT, 'YYYY-MM-DD') AS sttsEndDt
+		FROM MEETING_ROOM
+		ORDER BY RM_NO ASC
+	</select>
+
+	<select id="getAdminFixtList" resultType="reserveVO">
+	    SELECT F.FIXT_NO AS fixtNo,
+	    F.FIXT_CAT AS fixtCat,
+	    F.FIXT_NM AS fixtNm,
+	    F.FIXT_PLC AS fixtPlc,
+	    F.FIXT_QTY AS fixtQty,
+	    F.FIXT_STTS AS fixtStts,
+	    FM.FIXT_MD_NM AS fixtMdNm,
+	    F.ASSET_NO AS assetNo,
+	    TO_CHAR(F.FIXT_STTS_BGNG_DT, 'YYYY-MM-DD') AS sttsBgngDt,
+	    TO_CHAR(F.FIXT_STTS_END_DT, 'YYYY-MM-DD') AS sttsEndDt
+	    FROM FIXTURE F
+	    LEFT OUTER JOIN FIXTURE_MODEL FM ON F.FIXT_NO = FM.FIXT_NO
+	    ORDER BY F.FIXT_CAT, F.FIXT_NO ASC
+	</select>
+	
+	<insert id="insertAdminRoom" parameterType="reserveVO">
+		INSERT INTO
+		MEETING_ROOM (RM_NO, RM_NM, RM_PLC, RM_ACTC_NOPE, RM_STTS)
+		VALUES
+		((SELECT NVL(MAX(RM_NO), 0) + 1 FROM MEETING_ROOM), #{rmNm}, #{rmPlc},
+		#{rmActcNope}, #{rmStts})
+	</insert>
+
+	<update id="updateAdminRoom" parameterType="reserveVO">
+		UPDATE MEETING_ROOM
+		SET RM_NM = #{rmNm},
+		RM_PLC = #{rmPlc},
+		RM_ACTC_NOPE = #{rmActcNope},
+		RM_STTS = #{rmStts},
+		RM_STTS_BGNG_DT = TO_DATE(#{sttsBgngDt, jdbcType=VARCHAR}, 'YYYY-MM-DD'),
+		RM_STTS_END_DT = TO_DATE(#{sttsEndDt, jdbcType=VARCHAR}, 'YYYY-MM-DD')
+		WHERE RM_NO = #{rmNo}
+	</update>
+
+	<delete id="deleteAdminRoom" parameterType="int">
+		BEGIN
+		DELETE FROM ROOM_RESERVATION WHERE RM_NO = #{rmNo};
+		DELETE FROM MEETING_ROOM WHERE RM_NO = #{rmNo};
+		END;
+	</delete>
+
+	<insert id="insertAdminFixt" parameterType="reserveVO">
+		<selectKey keyProperty="fixtNo" resultType="int" order="BEFORE">
+	       	SELECT NVL(MAX(FIXT_NO), 0) + 1 FROM FIXTURE
+	       </selectKey>
+		BEGIN
+		INSERT INTO FIXTURE (FIXT_NO, FIXT_CAT, FIXT_NM, FIXT_QTY, FIXT_STTS, ASSET_NO) 
+		VALUES (#{fixtNo}, #{fixtCat}, #{fixtNm}, #{fixtQty}, #{fixtStts}, #{assetNo}); 
+
+		<if test="fixtMdNm != null">
+		INSERT INTO FIXTURE_MODEL (FIXT_NO, FIXT_MD_NM)
+		VALUES (#{fixtNo}, #{fixtMdNm, jdbcType=VARCHAR});
+		</if>
+		END;
+	</insert>
+
+	<update id="updateAdminFixt" parameterType="reserveVO">
+	    BEGIN
+	    UPDATE FIXTURE
+	    SET FIXT_CAT = #{fixtCat},
+	    FIXT_NM = #{fixtNm},
+	    FIXT_QTY = #{fixtQty},
+	    FIXT_STTS = #{fixtStts},
+	    ASSET_NO = #{assetNo},
+	    FIXT_STTS_BGNG_DT = TO_DATE(#{sttsBgngDt, jdbcType=VARCHAR}, 'YYYY-MM-DD'),
+	    FIXT_STTS_END_DT = TO_DATE(#{sttsEndDt, jdbcType=VARCHAR}, 'YYYY-MM-DD')
+	    WHERE FIXT_NO = #{fixtNo};
+	
+	    MERGE INTO FIXTURE_MODEL M
+	    USING DUAL ON (M.FIXT_NO = #{fixtNo})
+	    WHEN MATCHED THEN
+	        UPDATE SET M.FIXT_MD_NM = #{fixtMdNm, jdbcType=VARCHAR}
+	    WHEN NOT MATCHED THEN
+	        INSERT (FIXT_NO, FIXT_MD_NM)
+	        VALUES (#{fixtNo}, #{fixtMdNm, jdbcType=VARCHAR});
+	    END;
+	</update>
+
+	<delete id="deleteAdminFixt" parameterType="int">
+		BEGIN
+		DELETE FROM FIXTURE_RESERVATION WHERE FIXT_NO = #{fixtNo};
+		DELETE FROM FIXTURE_MODEL WHERE FIXT_NO = #{fixtNo};
+		DELETE FROM FIXTURE WHERE FIXT_NO = #{fixtNo};
+		END;
+	</delete>
+
+</mapper>

@@ -1,0 +1,111 @@
+/* --- 🌐 Global Fonts & Root --- */
+@import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;600;800&display=swap');
+
+:root {
+    --primary: #666CFF;
+    --secondary: #9B9EFE;
+    --dark: #232333;
+    --surface: rgba(255, 255, 255, 0.9);
+}
+
+body, html {
+    margin: 0; padding: 0;
+    font-family: 'Public Sans', sans-serif;
+    background-color: #f4f4f7;
+    color: var(--dark);
+    overflow-x: hidden;
+}
+
+/* --- 🌌 Hero Background Section --- */
+.hero-wrapper {
+    position: relative;
+    min-height: 100vh;
+    display: flex; align-items: center;
+    background: radial-gradient(circle at 0% 0%, rgba(102, 108, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(155, 158, 254, 0.1) 0%, transparent 50%);
+    overflow: hidden;
+}
+
+/* 배경 그리드 패턴 */
+.hero-wrapper::after {
+    content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background-image: radial-gradient(#666CFF 0.5px, transparent 0.5px);
+    background-size: 30px 30px;
+    opacity: 0.15; z-index: -1;
+}
+
+/* 배경 장식 원형 */
+.bg-circle {
+    position: absolute; border-radius: 50%;
+    filter: blur(100px); z-index: -1;
+    animation: pulse 10s infinite alternate;
+}
+.circle-1 { width: 400px; height: 400px; background: rgba(102, 108, 255, 0.2); top: -100px; right: -100px; }
+.circle-2 { width: 500px; height: 500px; background: rgba(155, 158, 254, 0.15); bottom: -150px; left: -150px; }
+
+@keyframes pulse {
+    from { transform: scale(1); opacity: 0.4; }
+    to { transform: scale(1.2); opacity: 0.7; }
+}
+
+/* --- 🧭 Navigation --- */
+.navbar { padding: 2rem 0; background: transparent; }
+.navbar-brand { font-weight: 800; font-size: 1.8rem; color: var(--primary) !important; letter-spacing: -1.5px; }
+
+/* --- 🖋️ Hero Content --- */
+.hero-text h1 {
+    font-size: 4.2rem; font-weight: 800; line-height: 1.1; margin-bottom: 2rem;
+    color: var(--dark);
+}
+.hero-text h1 span { color: var(--primary); }
+.hero-text p { font-size: 1.25rem; color: #6d6d8a; margin-bottom: 3rem; line-height: 1.6; }
+
+/* --- 🚀 3D Layer Visuals --- */
+.hero-visual { position: relative; height: 550px; width: 100%; }
+
+.layer {
+    position: absolute; border-radius: 24px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.12);
+    background: var(--surface); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.7);
+}
+
+.layer-main {
+    width: 85%; height: 380px; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); z-index: 2;
+    padding: 25px; overflow: hidden;
+    animation: floatMain 5s infinite ease-in-out;
+}
+
+.layer-stats {
+    width: 200px; padding: 20px;
+    top: 10%; right: 0; z-index: 3;
+    animation: floatStats 4s infinite ease-in-out;
+}
+
+.layer-users {
+    width: 220px; padding: 15px;
+    bottom: 15%; left: -5%; z-index: 4;
+    animation: floatUsers 6s infinite ease-in-out;
+}
+
+@keyframes floatMain { 0%, 100% { transform: translate(-50%, -52%) rotate(-1deg); } 50% { transform: translate(-50%, -48%) rotate(1deg); } }
+@keyframes floatStats { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-30px); } }
+@keyframes floatUsers { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(25px); } }
+
+/* --- 🔘 Button Style --- */
+.btn-start {
+    padding: 1.2rem 3.5rem; border-radius: 16px; font-weight: 700; font-size: 1.2rem;
+    background: linear-gradient(45deg, var(--primary), var(--secondary));
+    color: white; border: none; transition: 0.4s;
+    box-shadow: 0 10px 30px rgba(102, 108, 255, 0.4);
+}
+.btn-start:hover { transform: translateY(-5px) scale(1.05); box-shadow: 0 15px 40px rgba(102, 108, 255, 0.5); color: white; }
+
+/* Icon Boxes */
+.icon-box {
+    width: 60px; height: 60px; border-radius: 18px;
+    background: var(--primary); color: white;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px; box-shadow: 0 8px 15px rgba(102, 108, 255, 0.2);
+}

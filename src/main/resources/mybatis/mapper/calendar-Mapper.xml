@@ -1,0 +1,413 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.mapper.CalendarMapper">
+
+<!-- 캘린더 메인 일정 출력 -->
+	<select id="list" parameterType="int" resultType="calendarVO">
+	    SELECT  CAL_NO	"calNo", 
+	            EMP_ID 	"empId", 
+	            CAL_TTL "calTtl",      
+	            CAL_CN 	"calCn", 
+	            TO_CHAR(CAL_BGNG_DT, 'YYYY-MM-DD') "calBgngDt", 
+	            CASE 
+	                WHEN CAL_ALLDAY = 'Y' THEN TO_CHAR(CAL_END_DT + 1, 'YYYY-MM-DD')
+	                ELSE TO_CHAR(CAL_END_DT, 'YYYY-MM-DD')
+	            END AS "calEndDt",
+	            TO_CHAR(CAL_BGNG_TM, 'HH24:MI') "calBgngTm",
+	            TO_CHAR(CAL_END_TM, 'HH24:MI') 	"calEndTm",
+	            CAL_COLOR       "calColor", 
+	            CAL_LOCATION    "calLocation",
+	            CAL_IMPORTANT   "calImportant", 
+	            CAL_SHARE       "calShare", 
+	            CAL_ALLDAY      "calAllday",
+				CAL_HOLIDAY_YN  "calHolidayYn"
+	    FROM    CALENDAR
+	    WHERE	CAL_STTS = 'Y'
+	    AND		(EMP_ID = #{empId} OR CAL_SHARE = 'Y')
+	    ORDER BY	CASE WHEN CAL_IMPORTANT = 'Y' THEN 1 ELSE 2 END ASC, 
+        			CAL_BGNG_DT ASC
+	</select>
+	
+	
+	
+	
+<!-- 일정 날짜 수정 (드래그 앤 드롭) -->
+	<update id="updateRange" parameterType="calendarVO">
+		UPDATE CALENDAR
+		SET		CAL_BGNG_DT = #{calBgngDt}, CAL_END_DT = #{calEndDt}
+		WHERE	CAL_NO = #{calNo}
+	</update>
+
+
+
+<!-- 상세보기 -->
+	<select id="detail" parameterType="int" resultMap="calendarMap">
+		SELECT	A.CAL_NO, A.EMP_ID, A.CAL_TTL, A.CAL_CN,
+				TO_CHAR(A.CAL_BGNG_DT, 'YYYY-MM-DD') AS CAL_BGNG_DT,
+				TO_CHAR(A.CAL_END_DT, 'YYYY-MM-DD') AS CAL_END_DT,
+				A.CAL_COLOR, A.FILE_ID, A.CAL_DT, CAL_UPDATE,
+				A.CAL_IMPORTANT, A.CAL_LOCATION, A.CAL_STTS, A.CAL_BGNG_TM, 
+				A.CAL_END_TM, A.CAL_SHARE, A.CAL_ALLDAY,
+				B.CAL_SHARE_ID, B.CAL_SHARE_NM, B.CAL_SHARE_DEPT_NM,
+            	E.EMP_NM, D.DEPT_NM
+		FROM    CALENDAR A
+		LEFT OUTER JOIN 	CALENDAR_SHARE B ON (A.CAL_NO = B.CAL_SHARE_NO)
+		LEFT OUTER JOIN EMPLOYEE E ON (B.CAL_SHARE_ID = E.EMP_ID)
+    	LEFT OUTER JOIN DEPARTMENT D ON (E.DEPT_CD = D.DEPT_CD)
+		WHERE	A.CAL_NO = #{calNo}
+	</select>
+
+
+	<select id="fileDetails" parameterType="long" resultType="fileDetailVO">
+		SELECT	FILE_DTL_ID, FILE_ID, FILE_DTL_PATH, FILE_DTL_SAVE_NM, 
+				FILE_DTL_O_NM, FILE_DTL_EXT, FILE_DTL_DT, EMP_ID, FILE_DTL_DEL_YN
+		FROM	FILE_DETAIL
+		WHERE	FILE_ID = #{fileId}
+	</select>
+
+
+
+
+
+
+
+
+
+<!-- 일정 등록 (공유 대상 설정) -->
+	<insert id="addShare" parameterType="java.util.List">
+		INSERT INTO CALENDAR_SHARE (
+			CAL_SHARE_CD, CAL_SHARE_NO,
+			CAL_SHARE_ID, DEPT_CD,
+			CAL_SHARE_NM, CAL_SHARE_DEPT_NM,
+			CAL_SHARE_TYPE, CAL_SHARE_DATE
+		)
+		SELECT 	SEQ_CAL_SHARE_CD.NEXTVAL,
+				A.CAL_SHARE_NO, A.CAL_SHARE_ID,
+				A.DEPT_CD, A.CAL_SHARE_NM,
+				A.CAL_SHARE_DEPT_NM, A.CAL_SHARE_TYPE, SYSDATE
+		FROM (
+			<foreach collection="list" item="vo" separator="UNION ALL">
+				SELECT
+				#{vo.calShareNo}   AS CAL_SHARE_NO,
+				#{vo.calShareId}   AS CAL_SHARE_ID,
+				#{vo.deptCd}        AS DEPT_CD,
+				#{vo.calShareNm}    AS CAL_SHARE_NM,
+				#{vo.calShareDeptNm} AS CAL_SHARE_DEPT_NM,
+				#{vo.calShareType}  AS CAL_SHARE_TYPE
+				FROM DUAL
+			</foreach>
+		) A
+	</insert>
+
+
+<!-- 일정 등록 -->
+	<insert id="addSchedule" parameterType="calendarVO">
+		<selectKey resultType="int" order="BEFORE" keyProperty="calNo">
+			SELECT SEQ_CAL_NO.NEXTVAL FROM DUAL
+		</selectKey>
+		INSERT  INTO CALENDAR (CAL_NO, EMP_ID, CAL_TTL, CAL_CN,
+			CAL_BGNG_DT, CAL_END_DT, CAL_COLOR,
+			FILE_ID, CAL_DT, CAL_IMPORTANT,
+			CAL_LOCATION, CAL_STTS, CAL_BGNG_TM,
+			CAL_END_TM, CAL_SHARE, CAL_ALLDAY, CAL_HOLIDAY_YN)
+		VALUES (#{calNo}, #{empId}, #{calTtl}, #{calCn},
+			TO_DATE(#{calBgngDt}, 'YYYY-MM-DD'),
+			TO_DATE(#{calEndDt}, 'YYYY-MM-DD'),
+			#{calColor}, #{fileId}, SYSDATE,
+			#{calImportant}, #{calLocation}, #{calStts},
+			TO_TIMESTAMP(#{calBgngTm}, 'YYYY/MM/DD HH24:MI:SS'),
+			TO_TIMESTAMP(#{calEndTm}, 'YYYY/MM/DD HH24:MI:SS'),
+			#{calShare}, #{calAllday}, #{calHolidayYn})
+	</insert>
+
+
+<!-- 일정 등록 - 공유 대상 설정
+	<insert id="addShare" parameterType="java.util.List">
+		INSERT ALL
+		<foreach collection="list" item="item">
+			INTO	CALENDAR_SHARE (CAL_SHARE_NO, CAL_SHARE_ID, 
+									CAL_SHARE_TYPE, DEPT_CD, CAL_SHARE_CD, 
+									CAL_SHARE_DATE, CAL_SHARE_NM, 
+									CAL_SHARE_DEPT_NM)
+			VALUES (#{item.calShareNo}, #{item.calShareId}, 
+					#{item.calShareType}, #{item.deptCd}, 
+					#{item.calShareCd}, SYSDATE, #{item.calShareNm},
+					#{item.calShareDeptNm})
+		</foreach>
+		SELECT * FROM DUAL
+	</insert>
+ -->
+ 
+
+
+
+<!-- 일정 수정 -->
+	<update id="update" parameterType="calendarVO">
+	    UPDATE  CALENDAR
+	    SET     CAL_TTL        = #{calTtl},
+	            CAL_CN         = #{calCn},
+	            CAL_BGNG_DT    = TO_DATE(#{calBgngDt}, 'YYYY-MM-DD'),
+	            CAL_END_DT     = TO_DATE(#{calEndDt}, 'YYYY-MM-DD'),
+	            CAL_COLOR      = #{calColor},
+	            <if test="fileId != null and fileId !=0">
+	            	FILE_ID    = #{fileId},
+	            </if>
+	            CAL_UPDATE     = SYSDATE,  
+	            CAL_IMPORTANT  = #{calImportant},
+	            CAL_LOCATION   = #{calLocation},
+	            CAL_BGNG_TM    = TO_TIMESTAMP(#{calBgngTm}, 'YYYY/MM/DD HH24:MI:SS'),
+	            CAL_END_TM     = TO_TIMESTAMP(#{calEndTm}, 'YYYY/MM/DD HH24:MI:SS'),
+	            CAL_SHARE      = #{calShare},
+	            CAL_ALLDAY     = #{calAllday}
+	    WHERE   CAL_NO         = #{calNo}
+	</update>
+	
+	
+	<delete id="deleteShare" parameterType="int">
+	    DELETE FROM CALENDAR_SHARE
+	    WHERE  CAL_SHARE_NO = #{calNo}
+	</delete>
+
+
+	<insert id="insertCalendarShareList" parameterType="java.util.List">
+	    INSERT ALL
+	    <foreach collection="list" item="vo">
+	        INTO CALENDAR_SHARE (
+	            CAL_SHARE_NO, 
+	            CAL_SHARE_ID
+	        ) VALUES (
+	            #{vo.calShareNo}, 
+	            #{vo.calShareId}
+	        )
+	    </foreach>
+	    SELECT * FROM DUAL
+	</insert>
+
+
+
+<!-- 일정 삭제 -->
+	<update id="delete" parameterType="calendarVO">
+		DELETE
+		FROM 	CALENDAR
+		WHERE	CAL_NO = #{calNo}
+	</update>
+   
+
+   
+<!-- 로그인한 계정의 부서명 가져오기 -->
+	<select id="getDeptNm" parameterType="int" resultMap="departmentMap">
+		SELECT     D.DEPT_CD, D.DEPT_NM
+		FROM   DEPARTMENT D
+				   JOIN   EMPLOYEE E ON D.DEPT_CD = E.DEPT_CD
+		WHERE  E.EMP_ID = #{empId}
+	</select>
+   
+
+<!-- 로그인한 계정의 팀원 출력 -->
+	<select id="teamList" parameterType="int" resultType="employeeVO">
+		SELECT	EMP_ID, EMP_NM, EMP_JBGD, DEPT_CD
+		FROM	EMPLOYEE
+		WHERE	DEPT_CD = #{deptCd}
+		AND		EMP_ROLE = '사원'
+		ORDER BY EMP_JBGD DESC
+	</select>
+
+
+<!-- ㅡㅡㅡㅡㅡㅡㅡㅡ [연차] ㅡㅡㅡㅡㅡㅡㅡㅡㅡ -->
+	<!-- 연차 일정 -->
+	<select id="vacationList" parameterType="map" resultType="approvalVO">
+		SELECT  ATT_TYPE_ID, EMP_ID, VCT_DOC_CD, VCT_DOC_BGNG,
+				VCT_DOC_END, VCT_DOC_RSN, VCT_APRV_YN, VCT_STTS
+		FROM    APRV_VCT_DOC
+		WHERE   EMP_ID = #{empId}
+		AND     VCT_STTS = '결재완료'
+	</select>
+
+<!-- 연차 일정 count -->
+	<select id="countVacation" parameterType="map" resultType="approvalVO">
+		SELECT 	NVL(SUM(CASE WHEN TO_CHAR(VCT_DOC_BGNG, 'YYYY-MM') = #{currentMonth}
+							 THEN (VCT_DOC_END - VCT_DOC_BGNG) ELSE 0 END), 0)
+					AS monthCount,
+				NVL(SUM(VCT_DOC_END - VCT_DOC_BGNG +1), 0) AS totalCount,
+				  15 AS maxLeave
+		FROM 	APRV_VCT_DOC
+		WHERE 	EMP_ID = #{empId}
+		  AND 	VCT_STTS = '결재완료'
+	</select>
+
+
+
+<!-- ㅡㅡㅡㅡㅡㅡㅡㅡ [출장] ㅡㅡㅡㅡㅡㅡㅡㅡ -->
+<!-- 출장 일정 -->
+	<select id="bztrpList" parameterType="map" resultType="approvalVO">
+		SELECT  ATT_TYPE_ID, EMP_ID, BZTRP_PLC, BZTRP_START, 
+		BZTRP_END, BZTRP_RSN, BZTRP_APRV_YN, BZTRP_STTS
+		FROM    APRV_BZTRP_DOC
+		WHERE   EMP_ID = #{empId}
+		AND     BZTRP_STTS = '결재완료'
+	</select>
+
+
+<!-- 출장 일정 count -->
+	<select id="countBizTrip" parameterType="map" resultType="approvalVO">
+		SELECT 	NVL(SUM(CASE WHEN TO_CHAR(BZTRP_START, 'YYYY-MM') = #{currentMonth}
+		 				   THEN (BZTRP_END - BZTRP_START + 1) ELSE 0 END), 0)
+					AS monthCount,
+		NVL(SUM(BZTRP_END - BZTRP_START +1), 0) AS totalCount
+		FROM 	APRV_BZTRP_DOC
+		WHERE 	EMP_ID = #{empId}
+		  AND 	BZTRP_STTS = '결재완료'
+	</select>
+
+
+
+
+
+<!-- 회의실 일정 -->
+	<select id="roomReservationList" parameterType="int" resultType="reserveVO">
+		SELECT 	R.RM_RSVT_NO AS resId,
+		        '[' || M.RM_NM || '] ' || R.RM_RSVT_EXPLN AS title,
+		        TO_CHAR(R.RM_RSVT_BGNG_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS bgngDt,
+		        TO_CHAR(R.RM_RSVT_END_DT, 'YYYY-MM-DD"T"HH24:MI:SS') AS endDt,
+		        R.EMP_ID AS empId,
+				'#566a7f' AS calColor,
+				'ROOM' AS type
+		FROM    ROOM_RESERVATION R
+		INNER JOIN 	MEETING_ROOM M ON(R.RM_NO = M.RM_NO)
+		WHERE   EMP_ID = #{empId}
+	</select>
+
+
+
+<!-- 프로젝트 일정 -->
+	<select id="projectCalendarList" parameterType="string" resultType="projectVO">
+		SELECT
+			A.PROJ_NO,
+			A.EMP_ID,
+			A.PROJ_TTL,
+			A.PROJ_BGNG_DT,
+			A.PROJ_END_DT,
+			A.PROJ_STTS,
+			A.PROJ_DTL,
+			A.PROJ_NM,
+			B.PRTPNT_NM,
+			B.PRTPNT_PROJ_IPT
+		FROM 	PROJECT A
+		JOIN 	PROJECT_PARTICIPANT B ON (A.PROJ_NO = B.PROJ_NO)
+		WHERE 	B.EMP_ID = #{empId}
+		ORDER BY 	A.PROJ_BGNG_DT ASC
+	</select>
+
+
+
+
+
+
+<!-- 관리자 페이지 - 일정 출력 -->
+	<select id="adminList" parameterType="int" resultType="calendarVO">
+	    SELECT  CAL_NO	"calNo",
+	            EMP_ID 	"empId",
+	            CAL_TTL "calTtl",
+	            TO_CHAR(CAL_BGNG_DT, 'YYYY-MM-DD') "calBgngDt",
+	            CASE
+	                WHEN CAL_ALLDAY = 'Y' THEN TO_CHAR(CAL_END_DT, 'YYYY-MM-DD')
+	                ELSE TO_CHAR(CAL_END_DT, 'YYYY-MM-DD')
+	            END AS "calEndDt",
+	            CAL_SHARE       "calShare",
+	            CAL_ALLDAY      "calAllday",
+				CAL_HOLIDAY_YN  "calHolidayYn"
+	    FROM    CALENDAR
+	    WHERE	CAL_STTS = 'Y'
+	    AND		(EMP_ID = #{empId}
+				 OR CAL_SHARE = 'Y'
+				 OR CAL_HOLIDAY_YN = 'Y')
+	    ORDER BY CAL_BGNG_DT ASC, CAL_NO DESC
+	</select>
+
+	<update id="updateAdmin" parameterType="calendarVO">
+		UPDATE  CALENDAR
+		SET     CAL_TTL        = #{calTtl},
+				CAL_BGNG_DT    = TO_DATE(#{calBgngDt}, 'YYYY-MM-DD'),
+				CAL_END_DT     = TO_DATE(#{calEndDt}, 'YYYY-MM-DD'),
+				CAL_UPDATE     = SYSDATE,
+				CAL_SHARE      = #{calShare},
+				CAL_ALLDAY     = #{calAllday},
+				CAL_HOLIDAY_YN = #{calHolidayYn}
+		WHERE   CAL_NO         = #{calNo}
+	</update>
+
+
+	
+	
+
+
+
+<resultMap id="calendarMap" type="calendarVO">
+    <id property="calNo" column="CAL_NO" />
+	<result property="empId" column="EMP_ID"/>
+	<result property="calTtl" column="CAL_TTL"/>
+	<result property="calCn" column="CAL_CN"/>
+	<result property="calBgngDt" column="CAL_BGNG_DT"/>
+	<result property="calEndDt" column="CAL_END_DT"/>
+	<result property="calBgngTm" column="CAL_BGNG_TM"/>
+	<result property="calEndTm" column="CAL_END_TM"/>
+	<result property="calColor" column="CAL_COLOR"/>
+	<result property="calDt" column="CAL_DT"/>
+	<result property="calUpdate" column="CAL_UPDATE"/>
+	<result property="calImportant" column="CAL_IMPORTANT"/>
+	<result property="calLocation" column="CAL_LOCATION"/>
+	<result property="calStts" column="CAL_STTS"/>
+	<result property="calAllday" column="CAL_ALLDAY"/>
+	<result property="calShare" column="CAL_SHARE"/>
+	<result property="fileId" column="FILE_ID"/>
+	<result property="calHolidayYn" column="CAL_HOLIDAY_YN"/>
+    <collection property="calendarShareList" ofType="CalendarShareVO">
+        <result property="calShareId" column="CAL_SHARE_ID"/>
+        <result property="calShareNm" column="EMP_NM"/> 
+        <result property="calShareDeptNm" column="CAL_SHARE_DEPT_NM"/>
+    </collection>
+</resultMap>
+
+<resultMap id="calendarShareMap" type="calendarShareVO">
+    <id property="calShareNo" column="CAL_SHARE_NO"/>
+	<result property="calShareId" column="CAL_SHARE_ID"/>
+    <result property="calShareType" column="CAL_SHARE_TYPE"/>
+    <result property="deptCd" column="DEPT_CD"/>
+    <result property="calShareCd" column="CAL_SHARE_CD"/>
+    <result property="calShareDate" column="CAL_SHARE_DATE"/>
+    <result property="calShareNm" column="CAL_SHARE_NM"/>
+	<result property="calShareDeptNm" column="CAL_SHARE_DEPT_NM"/>
+</resultMap>
+
+<!-- department resultMap -->
+<resultMap id="departmentMap" type="departmentVO">
+	<id property="deptCd" column="DEPT_CD"/>
+	<result property="deptNm" column="DEPT_NM"/>
+	<collection property="teamLeaders" ofType="employeeVO" select="teamLeaders" column="DEPT_CD"/>
+</resultMap>
+
+<!-- employee resultMap -->
+<resultMap id="employeeMap" type="employeeVO">
+	<id property="empId" column="EMP_ID"/>
+	<result property="deptCd" column="DEPT_CD"/>
+	<result property="empPw" column="EMP_PW"/>
+	<result property="empNm" column="EMP_NM"/>
+	<result property="empBir" column="EMP_BIR"/>
+	<result property="empPhone" column="EMP_PHONE"/>
+	<result property="empEmail" column="EMP_EMAIL"/>
+	<result property="empDomainEml" column="EMP_DOMAIN_EML"/>
+	<result property="empAdd1" column="EMP_ADD1"/>
+	<result property="empAdd2" column="EMP_ADD2"/>
+	<result property="empProfile" column="EMP_PROFILE"/>
+	<result property="empRegistDate" column="EMP_REGIST_DATE"/>
+	<result property="empSign" column="EMP_SIGN"/>
+	<result property="empLastCnt" column="EMP_LAST_CNT"/>
+	<result property="empMlg" column="EMP_MLG"/>
+	<result property="empStts" column="EMP_STTS"/>
+	<result property="empJbgd" column="EMP_JBGD"/>
+	<result property="empRole" column="EMP_ROLE"/>
+	<collection property="teamEmployee" ofType="employeeVO" select="teamEmployee" column="DEPT_CD"/>
+</resultMap>
+
+
+</mapper>
